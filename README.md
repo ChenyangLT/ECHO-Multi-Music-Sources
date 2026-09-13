@@ -5,7 +5,7 @@
 把 **ECHO 社区版（ECHO Community）** 的在线音源移植到 **Steam 版 ECHO** 的
 [**ShinawaseLoader**](https://github.com/ChunchunOwO/ShinawaseLoader) 模组。
 
-[![Release](https://img.shields.io/github/v/release/ChenyangLT/ECHO-Multi-Music-Sources?style=flat-square&color=7c5cff)](https://github.com/ChenyangLT/ECHO-Multi-Music-Sources/releases/latest)
+[![Version](https://img.shields.io/badge/version-1.10.0-7c5cff?style=flat-square)](https://github.com/ChenyangLT/ECHO-Multi-Music-Sources/releases)
 [![License](https://img.shields.io/badge/license-LGPL--3.0-7c5cff?style=flat-square)](LICENSE)
 [![Platform](https://img.shields.io/badge/ECHO-Steam-22c55e?style=flat-square)](https://store.steampowered.com/)
 [![Loader](https://img.shields.io/badge/ShinawaseLoader-1.6.7%2B-0ea5e9?style=flat-square)](https://github.com/ChunchunOwO/ShinawaseLoader)
