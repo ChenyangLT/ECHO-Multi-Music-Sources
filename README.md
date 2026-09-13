@@ -71,7 +71,9 @@ Steam 版 ECHO 把第三方音乐平台的能力裁掉了：`app.asar` 里仍然
 
 ### 2. 安装本模组
 
-1. 到 [**Releases**](https://github.com/ChenyangLT/ECHO-Multi-Music-Sources/releases/latest) 下载 `echo.multi-music-sources-<版本>.echomod`；
+1. 下载 **`echo.multi-music-sources-1.10.0.echomod`**：
+   [**直接点这里下载**](https://github.com/ChenyangLT/ECHO-Multi-Music-Sources/raw/main/dist/echo.multi-music-sources-1.10.0.echomod)
+   （[Releases](https://github.com/ChenyangLT/ECHO-Multi-Music-Sources/releases) 页面也会附同一份）；
 2. 把它**拖进 Loader 的 Mods 页面**，或者直接放进 `ECHO/Mods/`（Loader 会自动导入并移到 `Mods/.processed/`）；
 3. 在 Loader 里**启用「ECHO 多平台音源」**；
 4. 重启 ECHO，左侧边栏会出现 **♫ 多平台音源**。
@@ -243,9 +245,9 @@ handlers, so `window.echo.streaming` is `null`. This mod runs the community plat
 playback to ECHO's real player through ShinawaseLoader's player runtime.
 
 **Requirements** — Windows, ECHO **Steam**, [ShinawaseLoader](https://github.com/ChunchunOwO/ShinawaseLoader) **1.6.7+**
-(tested with 1.7.2). Install the loader first, then drop the `.echomod` from
-[Releases](https://github.com/ChenyangLT/ECHO-Multi-Music-Sources/releases/latest) into the loader's
-Mods page (or into `ECHO/Mods/`), enable it, and restart the game. Always launch through
+(tested with 1.7.2). Install the loader first, then drop the `.echomod`
+([direct download](https://github.com/ChenyangLT/ECHO-Multi-Music-Sources/raw/main/dist/echo.multi-music-sources-1.10.0.echomod))
+into the loader's Mods page (or into `ECHO/Mods/`), enable it, and restart the game. Always launch through
 `ECHO.modded.exe`, never the stock `ECHO.exe`.
 
 **Highlights** — 9 platforms (NetEase, QQ Music, KuGou, Bilibili, YouTube, SoundCloud, Spotify, TIDAL, Qobuz);
