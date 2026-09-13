@@ -1,0 +1,14 @@
+{
+  "id": "echo.multi-music-sources",
+  "name": "ECHO 多平台音源 / Multi Music Sources",
+  "version": "1.10.0",
+  "minEchoVersion": "26.8.15",
+  "description": "把 ECHO 社区版的在线音源移植到 Steam 版：网易云、QQ 音乐、酷狗、哔哩哔哩、YouTube、SoundCloud、Spotify、TIDAL、Qobuz 的搜索、专辑、艺人、歌词、MV 与在线播放。1.10.0：「我的歌单」页新增**通过链接导入歌单**（网易云 / QQ 音乐 / 酷狗 / Spotify 链接，导入即可播放）与**显示方式选择**（图标 / 列表 / 紧凑，写入配置）；歌单**是否保存到本地改由用户决定**——点开歌单只读取，不再自动保存，卡片和明细页都有「保存到本地 / 取消保存」，「收藏与歌单」页底部新增「本地保存的歌单」分组列出链接导入并保存下来的歌单（不依赖账号、打开不联网）；修复歌单明细封面显示成占位图（歌单封面没有传给明细页，且 http 封面会升级为 https、失败再回退）；修复从歌单明细点「返回」回到搜索页而不是歌单页（明细页现在记住来源视图）。1.9.0：修复点击「我的歌单」里的歌单报 “Please enter a valid streaming playlist URL”；账号歌单列表与打开过的歌单写入本地 JSON；删去「同步“我喜欢”」按钮；修复首次进入歌曲详情页 MV 背景空白；修复歌词页「MV 背景设置」抽屉与右上角窗口按钮重合；「当前 MV」画质改成下拉框、候选列表显示封面。1.8.0：新增「我的歌单」页（网易云 / QQ 音乐歌单、B 站收藏夹 / 订阅收藏夹 / 稍后再看）。1.7.0：歌词页 ⚙ 打开完整设置抽屉。1.6.0：尺寸与 X/Y/Z、画面预设、候选视频、自定义链接绑定。1.5.0：移除 BBDown。1.4.0：移植社区版 MvService。1.1.0：扫码登录、每日推荐与“我喜欢”。",
+  "icon": "icon.svg",
+  "entry": "mod.js",
+  "main": "main.cjs",
+  "config": "config.json",
+  "configSchema": "config.schema.json",
+  "configUi": "config-ui.js",
+  "permissions": []
+}

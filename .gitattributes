@@ -1,0 +1,7 @@
+# Keep the published tree byte-identical across platforms.
+* text=auto eol=lf
+
+# Mod packages are binary
+*.echomod binary
+*.wasm binary
+*.ico binary

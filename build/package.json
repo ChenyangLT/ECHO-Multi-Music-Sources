@@ -1,0 +1,34 @@
+{
+  "name": "echo-multi-music-sources-build",
+  "private": true,
+  "type": "module",
+  "description": "Build pipeline for the ECHO Multi Music Sources mod: bundles the ECHO Community streaming providers into the mod package.",
+  "scripts": {
+    "build": "node build-provider-bridge.mjs",
+    "pack": "node pack-echomod.mjs",
+    "deploy": "node deploy-echomod.mjs",
+    "release": "node build-provider-bridge.mjs && node pack-echomod.mjs && node deploy-echomod.mjs",
+    "audit": "node audit-reachability.mjs",
+    "check": "node check-bundle.mjs",
+    "validate": "node validate-mod.mjs",
+    "verify:renderer": "node verify-renderer.mjs",
+    "verify:config-ui": "node verify-config-ui.mjs",
+    "verify:electron": "electron verify-electron-main.cjs",
+    "verify:mod": "electron verify-mod-main-electron.cjs",
+    "verify:mv": "electron verify-mv-protocol.cjs",
+    "verify:archive": "node verify-echomod.mjs ../dist/echo.multi-music-sources-1.10.0.echomod",
+    "test": "node verify-renderer.mjs && node verify-config-ui.mjs && electron verify-electron-main.cjs && electron verify-mod-main-electron.cjs"
+  },
+  "dependencies": {
+    "@neteasecloudmusicapienhanced/api": "^4.40.1",
+    "esbuild": "^0.25.12",
+    "fflate": "^0.8.3",
+    "iconv-lite": "^0.6.3",
+    "music-metadata": "^11.15.0",
+    "opencc-js": "^1.4.2",
+    "pinyin-pro": "^3.29.4"
+  },
+  "devDependencies": {
+    "electron": "^43.3.0"
+  }
+}

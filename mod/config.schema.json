@@ -1,0 +1,268 @@
+{
+  "type": "object",
+  "properties": {
+    "locale": {
+      "type": "string",
+      "title": "界面语言 / UI language",
+      "enum": ["zh-CN", "en-US"],
+      "default": "zh-CN"
+    },
+    "defaultProvider": {
+      "type": "string",
+      "title": "默认音源 / Default source",
+      "enum": ["netease", "qqmusic", "kugou", "bilibili", "youtube", "soundcloud", "spotify", "tidal", "qobuz"],
+      "default": "netease"
+    },
+    "defaultQuality": {
+      "type": "string",
+      "title": "默认音质 / Default quality",
+      "description": "解析播放地址时优先请求的音质，失败会自动降级。",
+      "enum": ["hires", "lossless", "high", "standard"],
+      "default": "lossless"
+    },
+    "pageSize": {
+      "type": "integer",
+      "title": "每页结果数 / Results per page",
+      "minimum": 10,
+      "maximum": 50,
+      "default": 30
+    },
+    "hideUnavailable": {
+      "type": "boolean",
+      "title": "隐藏不可播放的歌曲 / Hide unavailable tracks",
+      "default": false
+    },
+    "showProviderBadges": {
+      "type": "boolean",
+      "title": "显示音源标签 / Show source badges",
+      "default": true
+    },
+    "interceptPlayback": {
+      "type": "boolean",
+      "title": "接管在线播放解析 / Take over online playback resolution",
+      "description": "开启后，播放本模组加入队列的歌曲时优先使用社区版音源算法解析地址。关闭则回退到 Loader 自带音源。",
+      "default": true
+    },
+    "lyricsNetworkEnabled": {
+      "type": "boolean",
+      "title": "启用在线歌词 / Online lyrics lookup",
+      "default": true
+    },
+    "songBackgroundEnabled": {
+      "type": "boolean",
+      "title": "歌曲详情页 MV 背景（旧设置）/ Legacy MV background switch",
+      "description": "旧版配置项，仍会被读取；新的开关是下面的“启用 MV 背景”。",
+      "default": true
+    },
+    "playlistViewMode": {
+      "type": "string",
+      "title": "歌单显示方式 / Playlist layout",
+      "description": "「我的歌单」页的显示方式：grid 图标（大封面）、list 列表（封面 + 信息）、compact 紧凑（小封面单行）。",
+      "enum": ["grid", "list", "compact"],
+      "default": "grid"
+    },
+    "mvEnabled": {
+      "type": "boolean",
+      "title": "启用 MV 背景 / Enable the MV background",
+      "description": "播放栏右侧的开关与此同步；点进歌曲详情页（歌词页）就会在歌词后面显示匹配到的 B 站 MV。",
+      "default": true
+    },
+    "mvAutoSearch": {
+      "type": "boolean",
+      "title": "自动搜索网络 MV / Auto-search online MV",
+      "default": true
+    },
+    "mvAutoPreload": {
+      "type": "boolean",
+      "title": "预加载 MV / Preload MV",
+      "default": true
+    },
+    "mvTitleOnlySearch": {
+      "type": "boolean",
+      "title": "只用歌曲名搜索 / Search by title only",
+      "description": "关闭后使用「歌曲名 + 艺人」（推荐，匹配更准）。",
+      "default": false
+    },
+    "mvSearchSuffix": {
+      "type": "string",
+      "title": "搜索后缀 / Search suffix",
+      "description": "附加在搜索词后面的关键字，默认 MV；留空则不加。",
+      "default": "MV"
+    },
+    "mvPreferHighestViewCount": {
+      "type": "boolean",
+      "title": "按播放量优先匹配 / Prefer the most viewed match",
+      "description": "社区版默认开启。开启时按播放量挑选（匹配度阈值不参与筛选）；关闭后按匹配度阈值筛选并取最高分。",
+      "default": true
+    },
+    "mvAutoApplyThreshold": {
+      "type": "number",
+      "title": "背景匹配置信度阈值 / Background match threshold",
+      "description": "只有匹配分数达到该值的 MV 才会被用作背景（“按播放量优先匹配”关闭时生效）。社区版默认为 0.7。",
+      "minimum": 0.3,
+      "maximum": 1,
+      "default": 0.7
+    },
+    "mvImmersiveBackground": {
+      "type": "boolean",
+      "title": "沉浸式 MV 背景 / Immersive MV background",
+      "default": true
+    },
+    "mvImmersiveBackgroundAutoScale": {
+      "type": "boolean",
+      "title": "自动缩放 / Auto scale",
+      "description": "按画面比例自动放大视频以填满窗口，避免出现黑边；开启时填充方式固定为「窄边（完整显示）」。",
+      "default": true
+    },
+    "mvImmersiveBackgroundFit": {
+      "type": "string",
+      "title": "填充方式 / Fitting",
+      "description": "cover：铺满（裁切）；contain：窄边（完整显示）；fill：拉伸；none：原始尺寸居中。",
+      "enum": ["cover", "contain", "fill", "none"],
+      "default": "cover"
+    },
+    "mvImmersiveBackgroundWidthPercent": {
+      "type": "integer",
+      "title": "画面宽度 % / Video width",
+      "description": "MV 画面框相对歌词页的宽度（100% = 与窗口同宽）。",
+      "minimum": 10,
+      "maximum": 200,
+      "default": 100
+    },
+    "mvImmersiveBackgroundHeightPercent": {
+      "type": "integer",
+      "title": "画面高度 % / Video height",
+      "description": "MV 画面框相对歌词页的高度（100% = 与窗口同高）。",
+      "minimum": 10,
+      "maximum": 200,
+      "default": 100
+    },
+    "mvImmersiveBackgroundScalePercent": {
+      "type": "integer",
+      "title": "缩放（Z）% / Zoom (Z)",
+      "description": "歌词页里按 Ctrl + 滚轮也可以缩放。",
+      "minimum": 70,
+      "maximum": 220,
+      "default": 115
+    },
+    "mvImmersiveBackgroundOffsetXPercent": {
+      "type": "integer",
+      "title": "水平位置（X）% / Offset X",
+      "description": "在歌词页上拖动背景即可调整。",
+      "minimum": 0,
+      "maximum": 100,
+      "default": 50
+    },
+    "mvImmersiveBackgroundOffsetYPercent": {
+      "type": "integer",
+      "title": "垂直位置（Y）% / Offset Y",
+      "minimum": 0,
+      "maximum": 100,
+      "default": 50
+    },
+    "mvImmersiveBackgroundBlurPx": {
+      "type": "integer",
+      "title": "背景模糊 px / Background blur",
+      "minimum": 0,
+      "maximum": 32,
+      "default": 0
+    },
+    "mvImmersiveBackgroundBrightnessPercent": {
+      "type": "integer",
+      "title": "背景亮度 % / Background brightness",
+      "minimum": 60,
+      "maximum": 140,
+      "default": 100
+    },
+    "mvImmersiveBackgroundOverlayOpacityPercent": {
+      "type": "integer",
+      "title": "暗色遮罩 % / Background overlay",
+      "description": "在背景上叠加一层暗色遮罩，数值越高前景越清晰。深色主题下最低为 42%。",
+      "minimum": 0,
+      "maximum": 100,
+      "default": 0
+    },
+    "mvLyricsReadabilityEnhanced": {
+      "type": "boolean",
+      "title": "歌词可读性增强 / Enhanced lyrics readability",
+      "default": false
+    },
+    "mvHideLyrics": {
+      "type": "boolean",
+      "title": "MV 背景播放时隐藏歌词 / Hide lyrics while the MV plays",
+      "default": false
+    },
+    "mvRestartAudioOnLoad": {
+      "type": "boolean",
+      "title": "MV 跟随音乐进度 / Follow the music progress",
+      "description": "持续把 MV 对准歌曲播放位置（微调播放速度，差距过大时快进；MV 比歌短就循环对齐）。本模组默认开启，社区版默认为关闭。",
+      "default": true
+    },
+    "mvSyncMode": {
+      "type": "string",
+      "title": "同步模式 / Sync mode",
+      "enum": ["stable", "balanced", "precise"],
+      "default": "balanced"
+    },
+    "mvReplayAudioOnChange": {
+      "type": "boolean",
+      "title": "切换 MV 后从头对齐 / Align the MV to the song start",
+      "default": true
+    },
+    "mvMaxQuality": {
+      "type": "string",
+      "title": "MV 最高画质 / MV max quality",
+      "enum": ["720p", "1080p", "1440p", "2160p", "max"],
+      "default": "max"
+    },
+    "mvAllow60fps": {
+      "type": "boolean",
+      "title": "允许 60fps / Allow 60fps",
+      "default": true
+    },
+    "mvMatchMode": {
+      "type": "string",
+      "title": "MV 匹配方式 / MV match mode",
+      "description": "first：直接用「歌曲名」在 B 站搜索的第一个视频（推荐）；score：按匹配度评分；views：按播放量。",
+      "enum": ["first", "score", "views"],
+      "default": "first"
+    },
+    "mvCandidateLimit": {
+      "type": "integer",
+      "title": "候选数量 / Candidate count",
+      "description": "自动匹配取前几个搜索结果，也决定背景设置页候选列表显示多少个（点击候选即可为这首歌换 MV）。",
+      "minimum": 2,
+      "maximum": 20,
+      "default": 8
+    },
+    "mvSourceMode": {
+      "type": "string",
+      "title": "背景视频来源 / Background video source",
+      "description": "engine：背景 MV 由社区版 MV 引擎解析成视频流直接播放（与社区版一致，不下载、不缓存）；progressive：只用 B 站完整 MP4（引擎解析失败时的回退方式）。",
+      "enum": ["engine", "progressive"],
+      "default": "engine"
+    },
+    "tidalClientId": {
+      "type": "string",
+      "title": "TIDAL Client ID",
+      "description": "留空则使用社区版内置的默认值。",
+      "default": "vmtQLf79BHl9YgUT"
+    },
+    "tidalClientSecret": {
+      "type": "string",
+      "title": "TIDAL Client Secret",
+      "description": "TIDAL 搜索需要自己的开发者凭据，填在 TIDAL Dashboard 申请到的值。",
+      "default": ""
+    },
+    "tidalCountryCode": {
+      "type": "string",
+      "title": "TIDAL 国家/地区代码",
+      "default": "US"
+    },
+    "debugLogging": {
+      "type": "boolean",
+      "title": "调试日志 / Debug logging",
+      "default": false
+    }
+  }
+}

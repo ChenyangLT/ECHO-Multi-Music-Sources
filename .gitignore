@@ -1,0 +1,33 @@
+# Build dependencies (restore with `npm install` inside build/)
+build/node_modules/
+
+# Generated at build time from build/provider-bridge.ts
+build/provider-bridge.staged.ts
+build/_*.mjs
+
+# Build output that ships inside the mod package
+mod/bridge/
+
+# Release artifacts (published as GitHub Release assets instead)
+dist/
+
+# Scratch space used by the build/verification scripts
+work/
+build/work/
+
+# Vendored ECHO Community source: clone https://github.com/Moekotori/ECHO
+# (or point ECHO_MAIN_ROOT at your checkout) before building the bridge.
+ECHO-main/
+
+# Local reference copies of upstream material. ShinawaseLoader ships no license
+# file (its package.json is private), so its sources are not redistributed in
+# this repository — get them from https://github.com/ChunchunOwO/ShinawaseLoader
+reference/
+
+# Downloaded archives (e.g. ShinawaseLoader-main.zip) are not part of the mod
+*.zip
+
+# OS noise
+Thumbs.db
+Desktop.ini
+.DS_Store
