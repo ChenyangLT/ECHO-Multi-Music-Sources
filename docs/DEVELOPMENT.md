@@ -290,6 +290,27 @@ Steam 版的 `.lyrics-backdrop` 带 `isolation:isolate` + `contain:paint`，
 `verify-renderer` 用一个「`play()` 永不触发 `playing`」的桩覆盖了这两点：
 层保持 `loading`、状态条显示「正在加载」、并且在 20 秒内自动走到了 `mvResolveMediaUrl`（重试档位）。
 
+### 偏移按钮点了没反应 / 拉条不能输入数值（1.12.0）
+
+**偏移**：`engineSetOffset()` 只更新了 `state.mvOffset` 与数据库里的值，**没有更新
+`backdrop.offsetMs`** —— 而 `alignBackdropToAudio()` 算目标时间用的是
+`audioSeconds + backdrop.offsetMs / 1000`。于是状态条弹出「MV 偏移：0.5s」、值也确实存进了引擎，
+**画面却一动不动**，看起来就是按钮坏了。现在 `engineSetOffset()` 会把新值写回 `backdrop.offsetMs`、
+立刻强制对齐一次，并同步刷新歌词页面板与（打开着的）抽屉。
+
+**按钮点不动**：监督定时器每 2 秒无条件执行 `renderBackdropPanelBody()`，而它开头就是
+`body.replaceChildren()` —— 如果 mousedown 与 mouseup 之间正好撞上这次重建，**点击事件根本不会产生**
+（click 要求按下与抬起在同一个元素上）。现在面板（和抽屉一样）带一个**内容签名**
+（匹配标题 / UP 主 / BV 号 / 链接 / 当前偏移 / 是否隐藏歌词），签名没变就不重建；
+`data-state` 这种纯属性改成原地更新（所以 4.2 秒的提示条不会再重建面板）。
+
+**拉条加数值输入**：`bgSlider()` 现在每个拉条都配一个 `<input type="number">`，与拉条双向同步、
+按范围夹紧、回车或失焦即写入（走同一套 `persistBackgroundSettings`）。配置弹窗里的
+`rangeField()` 同样加了数值输入框，所以两边的拉条都能直接敲数字。
+
+`verify-renderer` 覆盖：`+0.5s` 之后 `<video>.currentTime` 必须从 30.0 变成 30.5、
+一个 poll tick 之后按钮还是同一个 DOM 节点、以及数值框输入 15 / 999（夹到 20）都写进了设置。
+
 ### 抽屉不认账号 / 刷新没反应（1.11.0）
 
 重启游戏后，歌词页打开 **MV 背景设置**抽屉，B 站明明已登录却显示「未登录」，点 `刷新状态` 也像没反应。

@@ -1391,6 +1391,40 @@ const run = async () => {
       countSlider.dispatch('change');
       await waitFor(() => calls.some((call) => call.method === 'setSettings' && call.payload?.mvCandidateLimit === 4), 'candidate limit saved');
       check('the candidate count is persisted', calls.some((call) => call.method === 'setSettings' && call.payload?.mvCandidateLimit === 4));
+
+      // Every slider also takes a typed value, so exact numbers do not depend on
+      // dragging a range.
+      const countNumber = countSlider.parentNode?.querySelectorAll('.mms-bg-number')[0];
+      check(
+        'the candidate count offers a number field',
+        Boolean(countNumber) && countNumber.type === 'number',
+        `type=${countNumber?.type ?? '(none)'}`,
+      );
+      if (countNumber) {
+        countNumber.value = '15';
+        countNumber.dispatch('change');
+        await waitFor(
+          () => calls.some((call) => call.method === 'setSettings' && call.payload?.mvCandidateLimit === 15),
+          'typed candidate count saved',
+        );
+        check(
+          'a typed value is applied exactly like the slider',
+          calls.some((call) => call.method === 'setSettings' && call.payload?.mvCandidateLimit === 15),
+          `value=${countNumber.value} slider=${countSlider.value}`,
+        );
+        // Out-of-range input is clamped to the slider's own bounds.
+        countNumber.value = '999';
+        countNumber.dispatch('change');
+        await waitFor(
+          () => calls.some((call) => call.method === 'setSettings' && call.payload?.mvCandidateLimit === 20),
+          'typed candidate count clamped',
+        );
+        check(
+          'a typed value is clamped to the slider range',
+          calls.some((call) => call.method === 'setSettings' && call.payload?.mvCandidateLimit === 20) && countNumber.value === '20',
+          `value=${countNumber.value}`,
+        );
+      }
     }
   }
 
@@ -1881,6 +1915,132 @@ const run = async () => {
     const closeDrawerButton = drawer?.querySelectorAll('.mms-mv-panel-action')[0];
     closeDrawerButton?.click();
     await settle(2);
+  }
+
+  // --- the offset buttons must actually move the running video -------------
+  // engineSetOffset() updated state.mvOffset and the stored value but never
+  // backdrop.offsetMs, which is what the alignment math reads: the notice
+  // appeared, the value was saved, and the video did not move — the offset
+  // buttons looked dead. The panel body was also rebuilt on every poll tick,
+  // which swallowed clicks that landed between mousedown and mouseup.
+  const offsetTrack = {
+    id: 'streaming:netease:99',
+    stableKey: 'streaming:netease:99',
+    mediaType: 'streaming',
+    provider: 'netease',
+    providerTrackId: '99',
+    title: '偏移的歌',
+    artist: '艺人',
+    duration: 200,
+  };
+  mainResponses.mvGetSelected = { ok: true, result: null };
+  mainResponses.findMvCandidates = {
+    ok: true,
+    result: [{ id: 'BVOFFSET', title: '偏移的歌 MV', uploader: 'UP', url: 'https://www.bilibili.com/video/BVOFFSET', duration: 200, viewCount: 10, score: 0.9 }],
+  };
+  mainResponses.mvSearchNetworkCandidatesForSnapshot = {
+    ok: true,
+    result: [{ id: 'cand-offset', title: '偏移的歌 MV', uploader: 'UP', url: 'https://www.bilibili.com/video/BVOFFSET', providerUrl: 'https://www.bilibili.com/video/BVOFFSET', score: 0.9, viewCount: 10, durationSeconds: 200, reasons: [] }],
+  };
+  mainResponses.mvSelectVideo = {
+    ok: true,
+    result: {
+      id: 'video-offset',
+      sourceId: 'BVOFFSET',
+      provider: 'bilibili',
+      title: '偏移的歌 MV',
+      providerUrl: 'https://www.bilibili.com/video/BVOFFSET',
+      mediaUrl: 'echo-mv://stream/video-offset/bilibili-qn-80',
+      qualityLabel: '1080P',
+      playableInApp: true,
+      offsetMs: 0,
+      durationSeconds: 200,
+    },
+  };
+  // The engine stores the per-track offset on the video record, so both the write
+  // and the later read report the same value — exactly like the real MvService.
+  let offsetTestMs = 0;
+  mainResponses.mvSetOffset = (payload) => {
+    offsetTestMs = Number(payload?.offsetMs) || 0;
+    return { ok: true, result: { id: 'video-offset', offsetMs: offsetTestMs } };
+  };
+  mainResponses.mvGetSelected = () => ({
+    ok: true,
+    result: {
+      id: 'video-offset',
+      sourceType: 'manual',
+      sourceId: 'BVOFFSET',
+      provider: 'bilibili',
+      title: '偏移的歌 MV',
+      providerUrl: 'https://www.bilibili.com/video/BVOFFSET',
+      mediaUrl: 'echo-mv://stream/video-offset/bilibili-qn-80',
+      playableInApp: true,
+      durationSeconds: 200,
+      offsetMs: offsetTestMs,
+      selected: true,
+      score: 1,
+    },
+  });
+  player.status = async () => ({
+    state: 'playing',
+    currentTrackId: 'streaming:netease:99',
+    positionSeconds: 30,
+    durationSeconds: 200,
+    currentTrack: offsetTrack,
+  });
+
+  await waitFor(
+    () => String(lyricsPage.querySelector('.mms-backdrop-video')?.src).includes('video-offset'),
+    'offset test video loads',
+    12_000,
+  );
+  const offsetVideo = lyricsPage.querySelector('.mms-backdrop-video');
+  const offsetButton = lyricsPage.querySelector('.mms-mv-panel')
+    ?.querySelectorAll('.mms-ghost')
+    .find((item) => item.textContent === '+0.5s');
+  check('the offset test has a panel button and a video', Boolean(offsetButton && offsetVideo));
+  if (offsetButton && offsetVideo) {
+    // The forced alignment on load puts the video at the song position.
+    await waitFor(() => Math.abs(Number(offsetVideo.currentTime) - 30) < 0.01, 'video aligned to the song', 8000);
+    check(
+      'the video starts aligned to the song position',
+      Math.abs(Number(offsetVideo.currentTime) - 30) < 0.01,
+      `currentTime=${offsetVideo.currentTime}`,
+    );
+    offsetButton.click();
+    await waitFor(
+      () => calls.some((call) => call.method === 'mvSetOffset' && call.payload?.offsetMs === 500),
+      'offset saved',
+      8000,
+    );
+    await waitFor(() => Math.abs(Number(offsetVideo.currentTime) - 30.5) < 0.01, 'video follows the offset', 8000);
+    check(
+      'a +0.5s nudge moves the running video, not just the label',
+      Math.abs(Number(offsetVideo.currentTime) - 30.5) < 0.01,
+      `currentTime=${offsetVideo.currentTime} offset=${calls.filter((call) => call.method === 'mvSetOffset').slice(-1)[0]?.payload?.offsetMs}`,
+    );
+    check(
+      'the panel confirms the new offset',
+      String(lyricsPage.querySelector('.mms-backdrop-status')?.textContent || '').includes('0.5s'),
+      String(lyricsPage.querySelector('.mms-backdrop-status')?.textContent || '').slice(0, 50),
+    );
+
+    // The supervisor timer keeps polling; the buttons must not be swapped out
+    // from under a click.
+    const panelBody = () => lyricsPage.querySelector('.mms-mv-panel')?.querySelector('.mms-mv-panel-body');
+    const buttonNow = () => lyricsPage.querySelector('.mms-mv-panel')
+      ?.querySelectorAll('.mms-ghost')
+      .find((item) => item.textContent === '+0.5s');
+    const buttonBefore = buttonNow();
+    const signatureBefore = String(panelBody()?.dataset.signature || '(none)');
+    await new Promise((resolveWait) => setTimeout(resolveWait, 2300));
+    const buttonAfter = buttonNow();
+    const signatureAfter = String(panelBody()?.dataset.signature || '(none)');
+    check(
+      'the panel buttons survive a poll tick (clicks are not swallowed)',
+      Boolean(buttonBefore) && buttonBefore === buttonAfter,
+      buttonBefore === buttonAfter ? 'same node' : `rebuilt: ${signatureBefore} -> ${signatureAfter}`,
+    );
   }
 
   // --- accounts + QR -------------------------------------------------------

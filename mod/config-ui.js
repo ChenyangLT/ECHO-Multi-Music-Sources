@@ -236,9 +236,10 @@ style.textContent = `
 .mmsc-field{display:flex;flex-direction:column;gap:4px;padding:6px 0}
 .mmsc-field>label{font-size:12px;font-weight:600}
 .mmsc-field>small{color:var(--theme-muted-text,#64748b);font-size:11px}
-.mmsc-range{display:flex;align-items:center;gap:10px}
-.mmsc-range input[type="range"]{flex:1;accent-color:var(--theme-accent-solid-bg,#4b55e8)}
-.mmsc-range output{min-width:3.4em;text-align:right;font-variant-numeric:tabular-nums;color:var(--theme-muted-text,#64748b);font-size:11px}
+.mmsc-range{display:flex;align-items:center;gap:8px}
+.mmsc-range input[type="range"]{flex:1;min-width:60px;accent-color:var(--theme-accent-solid-bg,#4b55e8)}
+.mmsc-number{flex:0 0 auto;width:5.4em;padding:4px 6px;border:1px solid var(--theme-panel-border,#d8dee9);border-radius:7px;background:var(--theme-field-bg,transparent);color:inherit;font-size:11px;font-variant-numeric:tabular-nums;text-align:right}
+.mmsc-range output{min-width:3.2em;text-align:right;font-variant-numeric:tabular-nums;color:var(--theme-muted-text,#64748b);font-size:11px}
 .mmsc-switch-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:6px 0}
 .mmsc-switch-row span{font-size:12px;font-weight:600}
 .mmsc-switch input{accent-color:var(--theme-accent-solid-bg,#4b55e8)}
@@ -293,7 +294,7 @@ const textField = (key, placeholder, title) => {
   return field;
 };
 
-/** Range control, mirroring ECHO-main's NumberRangeField. */
+/** Range control, mirroring ECHO-main's NumberRangeField (plus a typed value). */
 const rangeField = (key, { min, max, step = 1, suffix = '', title, hint, transform }) => {
   const field = el('div', 'mmsc-field');
   field.dataset.key = key;
@@ -305,21 +306,51 @@ const rangeField = (key, { min, max, step = 1, suffix = '', title, hint, transfo
   input.max = String(max);
   input.step = String(step);
 
+  // Dragging is imprecise for values like 50% / 8 candidates, so every range also
+  // accepts a typed number; both write the same draft entry.
+  const number = document.createElement('input');
+  number.type = 'number';
+  number.className = 'mmsc-number';
+  number.min = String(min);
+  number.max = String(max);
+  number.step = String(step);
+  number.setAttribute('aria-label', title || key);
+
   const toDisplay = (value) => (transform ? transform.toDisplay(value) : num(value, min, max, min));
   const fromDisplay = (value) => (transform ? transform.fromDisplay(value) : Number(value));
 
   const write = (value) => {
     const display = toDisplay(value);
     input.value = String(display);
+    number.value = String(display);
     output.textContent = `${display}${suffix}`;
   };
 
   const output = el('output', null, '');
   input.addEventListener('input', () => {
     draft[key] = fromDisplay(Number(input.value));
+    number.value = input.value;
     output.textContent = `${input.value}${suffix}`;
   });
-  row.append(input, output);
+  const applyTyped = () => {
+    const parsed = Number(number.value);
+    if (!Number.isFinite(parsed)) {
+      write(draft[key]);
+      return;
+    }
+    const clamped = Math.min(max, Math.max(min, parsed));
+    draft[key] = fromDisplay(clamped);
+    write(draft[key]);
+  };
+  number.addEventListener('change', applyTyped);
+  number.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      applyTyped();
+    }
+  });
+
+  row.append(input, number, output);
   field.append(row);
   if (hint) field.append(el('small', null, hint));
   controls.push({ key, write });

@@ -2166,15 +2166,33 @@ const renderBackdropDrawerBody = () => {
 const nudgeBackdropOffset = async (delta, reset = false) => {
   const next = reset ? 0 : (Number(state.mvOffset) || 0) + delta;
   await engineSetOffset(next);
-  reportNotice(`${copy.engineOffset}：${(Number(state.mvOffset || next) / 1000).toFixed(1)}s`);
+  reportNotice(`${copy.engineOffset}：${(Number(state.mvOffset ?? next) / 1000).toFixed(1)}s`);
 };
 
 /** Rebuilds the panel body from the current background/engine state. */
-const renderBackdropPanelBody = () => {
+const renderBackdropPanelBody = (force = false) => {
   const panel = backdrop.panel;
   if (!panel) return;
   const body = panel.querySelector('.mms-mv-panel-body');
   if (!body) return;
+  // The supervisor timer calls this every couple of seconds. Replacing the
+  // buttons while the user is pressing one swallows the click (a click needs
+  // mousedown and mouseup on the same element), which is what made the offset
+  // buttons feel dead; only rebuild when something they show actually changed.
+  // The pill state is not part of the signature: it is a data attribute, so it is
+  // updated in place even while a 4.2s notice is on screen.
+  panel.dataset.state = backdrop.state;
+  const settings = backgroundConfig();
+  const signature = [
+    backdrop.matched?.title || '',
+    backdrop.matched?.uploader || '',
+    backdrop.matched?.bvid || '',
+    backdrop.matched?.url || '',
+    Number(state.mvOffset) || 0,
+    settings.hideLyrics ? 'hide' : 'show',
+  ].join('|');
+  if (!force && body.dataset.signature === signature) return;
+  body.dataset.signature = signature;
   body.replaceChildren();
 
   const matched = backdrop.matched;
@@ -2193,7 +2211,6 @@ const renderBackdropPanelBody = () => {
     button('mms-ghost', copy.panelOffsetPlus, () => void nudgeBackdropOffset(500)),
     button('mms-ghost', copy.panelOffsetReset, () => void nudgeBackdropOffset(0, true)),
   );
-  const settings = backgroundConfig();
   row.append(
     button('mms-ghost', settings.hideLyrics ? copy.panelShow : copy.panelHide, () => {
       void persistBackgroundSettings({ mvHideLyrics: !settings.hideLyrics });
@@ -2211,7 +2228,6 @@ const renderBackdropPanelBody = () => {
   }
   row.append(button('mms-ghost', copy.panelDisable, () => void setBackdropEnabled(false)));
   body.append(row);
-  panel.dataset.state = backdrop.state;
 };
 
 /** Drag-to-pan and Ctrl+wheel zoom, mirroring ECHO-main's immersive layer. */
@@ -3883,6 +3899,14 @@ const engineSetOffset = async (offsetMs) => {
   } catch (error) {
     reportError(error);
   }
+  // The alignment math reads `backdrop.offsetMs`, not `state.mvOffset`: without
+  // this the notice changed and the stored value changed, but the running video
+  // never moved — the offset buttons looked like they did nothing.
+  backdrop.offsetMs = Number(state.mvOffset) || 0;
+  if (backdrop.video?.src) void alignBackdropToAudio({ force: true });
+  // Show it straight away in the lyrics-page panel and in the open drawer.
+  renderBackdropPanelBody(true);
+  if (backdrop.drawer?.dataset.open === 'true') renderBackdropDrawerBody();
   renderSoon();
 };
 
@@ -4019,6 +4043,13 @@ const bgToggle = (key, strict = false) => {
   return wrap;
 };
 
+/**
+ * A slider with a paired number field.
+ *
+ * Dragging a range is imprecise for values like "偏移 X 50%" or "候选数量 8", so
+ * every slider also accepts a typed value: both controls drive the same
+ * `persistBackgroundSettings` write, and either one updates the other.
+ */
 const bgSlider = (key, min, max, step, suffix, options = {}) => {
   const wrap = h('div', 'mms-bg-slider');
   const input = h('input');
@@ -4029,15 +4060,48 @@ const bgSlider = (key, min, max, step, suffix, options = {}) => {
   const raw = Number(config[key]);
   const display = options.transform ? options.transform.to(raw) : clampNumber(raw, min, max, min);
   input.value = String(Number.isFinite(display) ? display : min);
+
   const out = h('output', null, `${input.value}${suffix}`);
+  const number = h('input', 'mms-bg-number');
+  number.type = 'number';
+  number.min = String(min);
+  number.max = String(max);
+  number.step = String(step);
+  number.value = input.value;
+  number.setAttribute('aria-label', key);
+
+  const commit = (value) => {
+    const stored = options.transform ? options.transform.from(Number(value)) : Number(value);
+    void persistBackgroundSettings({ [key]: stored });
+  };
+  /** Writes a typed value back to the slider (clamped) and persists it. */
+  const applyTyped = () => {
+    const parsed = Number(number.value);
+    if (!Number.isFinite(parsed)) {
+      number.value = input.value;
+      return;
+    }
+    const clamped = Math.min(max, Math.max(min, parsed));
+    number.value = String(clamped);
+    input.value = String(clamped);
+    out.textContent = `${clamped}${suffix}`;
+    commit(clamped);
+  };
+
   input.addEventListener('input', () => {
     out.textContent = `${input.value}${suffix}`;
+    number.value = input.value;
   });
-  input.addEventListener('change', () => {
-    const value = options.transform ? options.transform.from(Number(input.value)) : Number(input.value);
-    void persistBackgroundSettings({ [key]: value });
+  input.addEventListener('change', () => commit(input.value));
+  number.addEventListener('change', applyTyped);
+  number.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      applyTyped();
+    }
   });
-  wrap.append(input, out);
+
+  wrap.append(input, number, out);
   return wrap;
 };
 
@@ -4997,9 +5061,10 @@ html[data-mms-hide-lyrics="true"] .lyrics-page .lyrics-left-panel::after{content
 .mms-bg-row-main small{font-size:11px}
 .mms-bg-row .mms-select{min-width:190px}
 .mms-bg-row .mms-search-input{max-width:280px}
-.mms-bg-slider{display:flex;align-items:center;gap:10px;min-width:200px}
-.mms-bg-slider input[type="range"]{flex:1;accent-color:var(--theme-accent-solid-bg,#4b55e8)}
-.mms-bg-slider output{min-width:3.4em;text-align:right;font-size:11px;color:var(--theme-muted-text,#64748b);font-variant-numeric:tabular-nums}
+.mms-bg-slider{display:flex;align-items:center;gap:8px;min-width:230px}
+.mms-bg-slider input[type="range"]{flex:1 1 auto;min-width:70px;accent-color:var(--theme-accent-solid-bg,#4b55e8)}
+.mms-bg-number{flex:0 0 auto;width:5.2em;padding:4px 6px;border:1px solid var(--theme-panel-border,#d8dee9);border-radius:7px;background:var(--theme-field-bg,transparent);color:inherit;font-size:11px;font-variant-numeric:tabular-nums;text-align:right}
+.mms-bg-slider output{min-width:3.2em;text-align:right;font-size:11px;color:var(--theme-muted-text,#64748b);font-variant-numeric:tabular-nums}
 .mms-switch{display:inline-flex;align-items:center;cursor:pointer}
 .mms-switch input{width:18px;height:18px;accent-color:var(--theme-accent-solid-bg,#4b55e8)}
 .mms-bg-candidates{display:flex;flex-direction:column;gap:4px;margin-top:4px}
