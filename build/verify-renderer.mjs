@@ -1757,6 +1757,132 @@ const run = async () => {
     String(lyricsPage.querySelector('.mms-backdrop-video')?.src).slice(0, 60),
   );
 
+  // --- a stream that never starts must not fake a playing background -------
+  // `playBackdropSource` used to announce `playing` before a single frame
+  // arrived, so a stalled request or an expired variant showed as an opaque
+  // black layer, and because a src was set the supervisor timer never retried:
+  // the only way out was toggling the player-bar switch by hand.
+  const stallTrack = {
+    id: 'streaming:netease:88',
+    stableKey: 'streaming:netease:88',
+    mediaType: 'streaming',
+    provider: 'netease',
+    providerTrackId: '88',
+    title: '卡住的歌',
+    artist: '艺人',
+    duration: 200,
+  };
+  mainResponses.findMvCandidates = {
+    ok: true,
+    result: [{ id: 'BVSTALL', title: '卡住的歌 MV', uploader: 'UP', url: 'https://www.bilibili.com/video/BVSTALL', duration: 200, viewCount: 10, score: 0.9 }],
+  };
+  mainResponses.mvSearchNetworkCandidatesForSnapshot = {
+    ok: true,
+    result: [{ id: 'cand-stall', title: '卡住的歌 MV', uploader: 'UP', url: 'https://www.bilibili.com/video/BVSTALL', providerUrl: 'https://www.bilibili.com/video/BVSTALL', score: 0.9, viewCount: 10, durationSeconds: 200, reasons: [] }],
+  };
+  mainResponses.mvSelectVideo = {
+    ok: true,
+    result: {
+      id: 'video-stall',
+      sourceId: 'BVSTALL',
+      provider: 'bilibili',
+      title: '卡住的歌 MV',
+      providerUrl: 'https://www.bilibili.com/video/BVSTALL',
+      mediaUrl: 'echo-mv://stream/video-stall/bilibili-qn-80',
+      qualityLabel: '1080P',
+      playableInApp: true,
+      offsetMs: 0,
+    },
+  };
+  mainResponses.mvResolveMediaUrl = { ok: true, result: { url: 'http://127.0.0.1:9/stall-proxy.mp4', qualityLabel: '1080P', durationSeconds: 200, mimeType: 'video/mp4' } };
+  mainResponses.prepareMvProgressive = { ok: true, result: { url: 'http://127.0.0.1:9/stall-progressive.mp4', qualityLabel: '720P', durationSeconds: 200, sizeBytes: 1, mimeType: 'video/mp4', mode: 'progressive' } };
+  player.status = async () => ({
+    state: 'playing',
+    currentTrackId: 'streaming:netease:88',
+    positionSeconds: 7,
+    durationSeconds: 200,
+    currentTrack: stallTrack,
+  });
+
+  // The stub's <video> fires `playing` synchronously; neuter it so the source is
+  // handed over without ever starting, exactly like a stalled CDN request.
+  const originalPlay = Element.prototype.play;
+  Element.prototype.play = function stalledPlay() { return Promise.resolve(); };
+  try {
+    await waitFor(
+      () => String(lyricsPage.querySelector('.mms-backdrop-video')?.src).includes('video-stall'),
+      'stalled stream handed to the video',
+      12_000,
+    );
+    const layer = lyricsPage.querySelector('.mms-lyrics-bg');
+    check(
+      'a stream that has not started is not reported as playing',
+      layer?.dataset.state === 'loading',
+      `state=${layer?.dataset.state}`,
+    );
+    check(
+      'the status pill says the stream is still loading',
+      String(lyricsPage.querySelector('.mms-backdrop-status')?.textContent || '').includes('正在加载'),
+      String(lyricsPage.querySelector('.mms-backdrop-status')?.textContent || '').slice(0, 60),
+    );
+
+    const proxyCallsBefore = calls.filter((call) => call.method === 'mvResolveMediaUrl').length;
+    await waitFor(
+      () => calls.filter((call) => call.method === 'mvResolveMediaUrl').length > proxyCallsBefore,
+      'the stalled stream is retried on its own',
+      20_000,
+    );
+    check(
+      'a stalled stream is retried without toggling the switch',
+      calls.filter((call) => call.method === 'mvResolveMediaUrl').length > proxyCallsBefore,
+      `${calls.filter((call) => call.method === 'mvResolveMediaUrl').length - proxyCallsBefore} retry step(s)`,
+    );
+  } finally {
+    Element.prototype.play = originalPlay;
+  }
+
+  // --- the lyrics-page drawer must follow the engine/account state ---------
+  // After a restart a signed-in Bilibili account showed as 未登录 in the drawer
+  // (and its 刷新状态 button looked dead) because loadMvEngine() only re-rendered
+  // the sidebar page, never the open drawer.
+  const panelSettings = lyricsPage.querySelector('.mms-mv-panel')
+    ?.querySelectorAll('.mms-mv-panel-action')
+    .find((item) => item.textContent.includes('设置'));
+  check('the MV panel still offers the settings drawer', Boolean(panelSettings));
+  if (panelSettings) {
+    panelSettings.click();
+    await settle(2);
+    const drawer = lyricsPage.querySelector('.mms-mv-drawer');
+    check('the drawer opens for the account check', drawer?.dataset.open === 'true', `open=${drawer?.dataset.open}`);
+    const refreshStatus = drawer?.querySelectorAll('.mms-ghost').find((item) => item.textContent.includes('刷新状态'));
+    check('the drawer offers 刷新状态', Boolean(refreshStatus));
+    mainResponses.mvEngineStatus = {
+      ok: true,
+      result: {
+        ready: true,
+        error: null,
+        database: 'C:\\Temp\\echo-mms-mv.sqlite',
+        tracks: 3,
+        settings: { autoSearch: true, immersiveBackgroundScalePercent: 115, syncMode: 'balanced', enabledProviders: ['bilibili', 'youtube'] },
+        account: { connected: true, displayName: 'B站小号', hasCookie: true },
+      },
+    };
+    refreshStatus?.click();
+    await waitFor(
+      () => String(drawer?.allText() || '').includes('B站小号'),
+      'the drawer follows the refreshed account',
+      8000,
+    );
+    check(
+      'the drawer picks up the refreshed B站 login state',
+      String(drawer?.allText() || '').includes('B站小号'),
+      String(drawer?.allText() || '').slice(0, 140),
+    );
+    const closeDrawerButton = drawer?.querySelectorAll('.mms-mv-panel-action')[0];
+    closeDrawerButton?.click();
+    await settle(2);
+  }
+
   // --- accounts + QR -------------------------------------------------------
   const navTabs = pageRoot.querySelectorAll('.mms-nav-tab');
   const accountsTab = navTabs.find((tab) => tab.textContent.includes('账号'));

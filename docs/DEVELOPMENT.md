@@ -262,6 +262,53 @@ Steam 版的 `.lyrics-backdrop` 带 `isolation:isolate` + `contain:paint`，
 
 `verify-renderer` 覆盖了「层被重建后自动重新匹配」与「失败后自动重试」两种回归。
 
+### 视频流没开始播放就宣称 playing（第四个移植期 bug，1.11.0）
+
+上面四条修完之后，仍然有一种「点进详情页 MV 不加载、要手动开关一次播放栏开关」的情况：
+**视频流本身没有开始播放**（CDN 请求卡住、`echo-mv://` 变体过期而协议 handler 没能刷新成功）。
+
+两个原因叠在一起：
+
+1. `playBackdropSource()` 在把 URL 交给 `<video>` 之后**立刻** `setBackdropMessage('playing', …)`，
+   于是背景层马上变成不透明 —— 但画面还没有任何一帧，用户看到的是一块黑（看起来就是「MV 没加载」）；
+2. `pollBackdrop()` 判断「这首歌是否已经匹配过」时只看 `<video>` **有没有 `src`**。src 一旦设上，
+   即使视频从没开始播放，监督定时器也不会再试 —— 只有手动开关（会 `stopBackdrop()` 清掉 src）
+   才会重新走一遍。
+
+现在：
+
+1. 交给 `<video>` 之后状态是 `loading`（状态条写「MV 已匹配：…（正在加载视频流…）」），
+   **背景层仍然透明**，露出 ECHO 自己的封面 / 主题背景；只有 `<video>` 自己的 `playing` 事件
+   才会把层点亮（`data-state="playing"`）。所以「没播起来」永远不会伪装成「正在播」。
+2. 新增**卡住看门狗**：`backdrop.startedAt` 记录把 URL 交给视频的时刻，每次 poll 里
+   - 还没 `playing` 且视频是 paused → 先轻轻 `play()` 一下；
+   - 超过 `BACKDROP_STALL_MS`（7s）仍然没开始 → 依次升级到 `backdrop.retry` 的下一档
+     （回环代理 → 完整 MP4），两次之后**重新为这首歌取一遍视频**；
+   - `<video>` 的事件都带归属判断（`backdrop.video !== video` 直接返回），
+     被重建/卸载的旧视频不会误报新层。
+
+`verify-renderer` 用一个「`play()` 永不触发 `playing`」的桩覆盖了这两点：
+层保持 `loading`、状态条显示「正在加载」、并且在 20 秒内自动走到了 `mvResolveMediaUrl`（重试档位）。
+
+### 抽屉不认账号 / 刷新没反应（1.11.0）
+
+重启游戏后，歌词页打开 **MV 背景设置**抽屉，B 站明明已登录却显示「未登录」，点 `刷新状态` 也像没反应。
+
+原因是 `loadMvEngine()` 结束后只 `renderSoon()`（重绘侧栏页面），而抽屉的 body 只在
+`openBackdropDrawer()` 与 `backdrop.drawerDirty` 时重建。抽屉如果先于引擎应答渲染，就会一直停在
+「引擎不可用 / 未登录」那一帧，`刷新状态` 按钮虽然被点到、状态也确实重新取了，抽屉却不会更新。
+
+现在：
+
+1. `openBackdropDrawer()` 在 `state.mvEngine` 还没有值时立刻 `loadMvEngine()`；
+2. `loadMvEngine()` 结束时，如果抽屉是打开的，顺手 `renderBackdropDrawerBody()` 重建它
+   （用 `state.mvEngineLoading` 防重入，因为面板末尾在引擎不可用时会再次调用 `loadMvEngine()`）；
+3. 引擎只报告「有 Cookie 但还没校验昵称」时，账号卡显示「已读取到 B 站 Cookie（还没校验昵称，点「刷新状态」）」，
+   不再一口咬定「未登录」。
+
+`verify-renderer` 覆盖：打开抽屉 → 改掉 `mvEngineStatus` 里的账号名 → 点 `刷新状态` →
+抽屉里必须出现新的账号名。
+
 ### 歌词页「MV 背景设置」抽屉与窗口按钮重合
 
 Steam 版里 `.page-surface`（也就是 `.lyrics-page`）跨整个窗口高度，而 `.app-titlebar` 是它**上面

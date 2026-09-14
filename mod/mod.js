@@ -125,6 +125,8 @@ const STRINGS = {
     backdropNoMatch: '没有找到足够匹配的 MV',
     backdropFailed: '背景视频解析失败',
     backdropMatched: (title) => `MV 已匹配：${title}`,
+    backdropLoading: (title) => `MV 已匹配：${title}（正在加载视频流…）`,
+    backdropRetrying: '视频流没有开始播放，正在重试…',
     backdropResolvingFor: (title) => `正在解析：${title}`,
     backdropNoStream: '社区 MV 引擎没有解析出可播放的视频流',
     backdropShortSource: '该视频流只包含几秒内容（B 站分段流），已改用完整 MP4',
@@ -142,6 +144,7 @@ const STRINGS = {
     engineTracksLine: (count) => `已记住 ${count} 首歌曲`,
     accountLine: 'B 站账号',
     accountUsed: (name) => `使用已登录账号${name ? ` · ${name}` : ''} 的 Cookie`,
+    accountCookieReady: '已读取到 B 站 Cookie（还没校验昵称，点「刷新状态」）',
     accountMissing: '未登录 B 站，部分视频会以匿名身份解析（清晰度受限）',
     sourceMode: '背景视频来源',
     sourceModeEngine: '社区 MV 引擎（与社区版一致）',
@@ -351,6 +354,8 @@ const STRINGS = {
     backdropNoMatch: 'No Bilibili video matched closely enough',
     backdropFailed: 'Could not resolve the background video',
     backdropMatched: (title) => `MV matched: ${title}`,
+    backdropLoading: (title) => `MV matched: ${title} (loading the stream…)`,
+    backdropRetrying: 'The stream did not start playing — retrying…',
     backdropResolvingFor: (title) => `Resolving: ${title}`,
     backdropNoStream: 'The community MV engine resolved no playable stream',
     backdropShortSource: 'That stream only holds a few seconds (a Bilibili segment); switching to the complete MP4',
@@ -368,6 +373,7 @@ const STRINGS = {
     engineTracksLine: (count) => `${count} track(s) remembered`,
     accountLine: 'Bilibili account',
     accountUsed: (name) => `Uses the signed-in cookie${name ? ` · ${name}` : ''}`,
+    accountCookieReady: 'Bilibili cookie found (profile not checked yet — press "Refresh status")',
     accountMissing: 'Not signed in to Bilibili; some videos resolve anonymously (lower quality)',
     sourceMode: 'Background video source',
     sourceModeEngine: 'Community MV engine (same as the community build)',
@@ -654,6 +660,7 @@ const state = {
   playlistStore: { ready: false, accounts: {}, collections: {} },
   // Community MV engine (ECHO-main's MvService) state.
   mvEngine: null,
+  mvEngineLoading: false,
   mvSettings: null,
   mvCandidates: null,
   mvSelected: null,
@@ -1594,6 +1601,11 @@ const cover = (url, className) => {
 // fallbacks so an existing configuration keeps working.
 
 const BACKDROP_POLL_MS = 2000;
+// A source that never reaches `playing` (a stalled CDN request, a variant the
+// protocol handler could not refresh) must not leave a blank background behind:
+// after this long it is retried, then escalated to the next acquisition step.
+const BACKDROP_STALL_MS = 7000;
+const BACKDROP_STALL_RETRIES = 2;
 
 /** ECHO-main's continuous MV/audio drift-correction profiles. */
 const MV_SYNC_PROFILES = {
@@ -1769,6 +1781,13 @@ const backdrop = {
   // Guards against overlapping match attempts (the observer and the timer can
   // both ask for one on the same tick).
   loading: false,
+  // When the current source was handed to the <video>, so a stream that never
+  // starts playing can be retried instead of leaving the layer blank until the
+  // player-bar switch is toggled by hand.
+  startedAt: 0,
+  stalls: 0,
+  // Title of the source currently loading, for the "matched / loading" message.
+  pendingTitle: '',
 };
 
 /**
@@ -1792,6 +1811,9 @@ const resetBackdropMatch = () => {
   backdrop.candidate = null;
   backdrop.matched = null;
   backdrop.lastError = null;
+  backdrop.startedAt = 0;
+  backdrop.stalls = 0;
+  backdrop.pendingTitle = '';
   backdrop.state = 'idle';
   backdrop.message = '';
   backdrop.reason = null;
@@ -1864,16 +1886,23 @@ const ensureBackdrop = () => {
   // CORS-mode request fails outright (media error 4). The main process injects
   // the Referer/UA headers the CDN requires instead.
   video.addEventListener('loadedmetadata', () => {
+    if (backdrop.video !== video) return;
     applyBackdropStyle();
     void alignBackdropToAudio({ force: true });
     escalateShortBackdropSource();
   });
   video.addEventListener('playing', () => {
+    // A detached element (the layer was rebuilt) must not reveal the new one.
+    if (backdrop.video !== video || backdrop.node !== node) return;
     backdrop.ready = true;
-    node.dataset.state = 'playing';
+    // Only now is the video really on screen: the layer stays transparent until
+    // this fires, so ECHO's own cover/theme backdrop shows while it buffers
+    // instead of a black hole that looks like "the MV did not load".
+    setBackdropMessage('playing', copy.backdropMatched(backdrop.pendingTitle || ''));
     applyBackdropStyle();
   });
   video.addEventListener('ended', () => {
+    if (backdrop.video !== video) return;
     // ECHO-main keeps the MV background looping under the song.
     try {
       video.currentTime = 0;
@@ -1883,6 +1912,7 @@ const ensureBackdrop = () => {
     }
   });
   video.addEventListener('error', () => {
+    if (backdrop.video !== video) return;
     // A media error on the community stream (expired variant, CDN refusal) is
     // retried through the fallback chain before the background is given up on.
     if (typeof backdrop.retry === 'function' && backdrop.retry()) return;
@@ -1948,7 +1978,7 @@ const updateBackdropStatus = () => {
   if (!node) return;
   const settings = backgroundConfig();
   const visible = settings.enabled
-    && ['searching', 'resolving', 'nomatch', 'error', 'notice'].includes(backdrop.state);
+    && ['searching', 'resolving', 'loading', 'nomatch', 'error', 'notice'].includes(backdrop.state);
   node.dataset.visible = String(visible);
   node.dataset.state = backdrop.state;
 
@@ -2097,6 +2127,10 @@ const openBackdropDrawer = () => {
   const drawer = ensureBackdropDrawer();
   if (!drawer) return;
   syncDrawerTop();
+  // Ask for the engine state on open: a session that never visited the sidebar
+  // 背景设置 page has no account information yet, and the drawer's account card
+  // (and its 刷新状态 button) needs it right away.
+  if (!state.mvEngine) void loadMvEngine();
   drawer.dataset.open = 'true';
   renderBackdropDrawerBody();
   bodyClicked(drawer);
@@ -2345,6 +2379,8 @@ const stopBackdrop = (state = 'idle') => {
   backdrop.retry = null;
   backdrop.escalate = null;
   backdrop.offsetMs = 0;
+  backdrop.startedAt = 0;
+  backdrop.pendingTitle = '';
   setBackdropMessage(state);
 };
 
@@ -2417,14 +2453,21 @@ const playBackdropSource = (url, best, track, source) => {
     return false;
   }
   backdrop.source = source;
+  backdrop.pendingTitle = best.title || track?.title || '';
+  backdrop.ready = false;
+  backdrop.startedAt = Date.now();
   syncBackdropLoop();
+  // Deliberately NOT 'playing': the layer is revealed by the video's own
+  // `playing` event (see ensureBackdrop), so a stream that never starts cannot
+  // masquerade as a playing background. Set before play() so the ordering holds
+  // even where `playing` is delivered synchronously.
+  setBackdropMessage('loading', copy.backdropLoading(backdrop.pendingTitle));
   video.src = url;
   video.load();
   void video.play?.().catch(() => {
     // Autoplay refusal is not fatal: the element will start once the page has
-    // been interacted with.
+    // been interacted with, and the supervisor timer keeps nudging it.
   });
-  setBackdropMessage('playing', copy.backdropMatched(best.title || track?.title || ''));
   // Follow the song from the start: ECHO-main force-aligns the MV whenever a new
   // video is loaded, whatever the continuous-sync setting says.
   void alignBackdropToAudio({ force: true, restart: backgroundConfig().replayOnChange });
@@ -2870,6 +2913,37 @@ const pollBackdrop = async () => {
   const settings = backgroundConfig();
   const id = status?.currentTrackId ?? status?.trackId ?? null;
   const track = id ? currentTrackFromStatus(status) : null;
+
+  // A <video> that was handed a URL but never reached `playing` is stuck: a
+  // stalled CDN request, or a variant the echo-mv:// handler could not refresh.
+  // This is exactly the case the user used to fix by toggling the player-bar
+  // switch off and on, so nudge playback first and escalate on our own if that
+  // does not help.
+  if (track && backdrop.trackId === String(id) && backdrop.video?.src) {
+    if (!backdrop.ready) {
+      if (backdrop.video.paused) void backdrop.video.play?.().catch(() => {});
+      if (Number(backdrop.startedAt) > 0 && Date.now() - Number(backdrop.startedAt) > BACKDROP_STALL_MS) {
+        backdrop.stalls = Number(backdrop.stalls || 0) + 1;
+        backdrop.startedAt = Date.now();
+        if (backdrop.stalls <= BACKDROP_STALL_RETRIES && typeof backdrop.retry === 'function') {
+          // Next acquisition step (loopback proxy → complete MP4).
+          const next = backdrop.retry;
+          backdrop.retry = null;
+          backdrop.escalate = null;
+          setBackdropMessage('loading', copy.backdropRetrying);
+          void next();
+          return;
+        }
+        if (backdrop.stalls > BACKDROP_STALL_RETRIES) {
+          // Every source failed to start: acquire the video for this track again.
+          backdrop.stalls = 0;
+          backdrop.trackId = null;
+          backdrop.lastError = null;
+          setBackdropMessage('resolving', copy.backdropRetrying);
+        }
+      }
+    }
+  }
 
   // Collecting the tracks the background matched is what "entering the song
   // detail page" means, so a failed attempt must not latch the track id: the next
@@ -3667,6 +3741,10 @@ const engineReady = () => state.mvEngine?.ready === true;
 
 /** Reads the engine state and pushes the mod config into it. */
 const loadMvEngine = async () => {
+  // Re-entrancy guard: rebuilding the drawer below renders the same panel, whose
+  // tail calls this again when the engine is unavailable.
+  if (state.mvEngineLoading) return;
+  state.mvEngineLoading = true;
   state.busy = null;
   try {
     const status = await invokeMain('mvEngineStatus');
@@ -3688,8 +3766,15 @@ const loadMvEngine = async () => {
     }
   } catch {
     state.mvEngine = null;
+  } finally {
+    state.mvEngineLoading = false;
   }
   renderSoon();
+  // The lyrics-page drawer shows the same panel: without this it kept rendering
+  // the state from before the engine answered — after a restart it showed "未登录"
+  // for a signed-in Bilibili account and its 刷新状态 button looked like it did
+  // nothing, because only the sidebar page was re-rendered.
+  if (backdrop.drawer?.dataset.open === 'true') renderBackdropDrawerBody();
 };
 
 /** The snapshot request ECHO-main's renderer builds for streaming tracks. */
@@ -4184,7 +4269,7 @@ const renderBackgroundSettings = () => {
   accountCard.append(h('strong', null, copy.accountLine));
   accountCard.append(h('small', 'mms-muted', account?.connected
     ? copy.accountUsed(account.displayName)
-    : copy.accountMissing));
+    : account?.hasCookie ? copy.accountCookieReady : copy.accountMissing));
   statusGrid.append(accountCard);
 
   statusSection.append(statusGrid);
