@@ -290,6 +290,38 @@ Steam 版的 `.lyrics-backdrop` 带 `isolation:isolate` + `contain:paint`，
 `verify-renderer` 用一个「`play()` 永不触发 `playing`」的桩覆盖了这两点：
 层保持 `loading`、状态条显示「正在加载」、并且在 20 秒内自动走到了 `mvResolveMediaUrl`（重试档位）。
 
+### MV 在播放却不显示 / 一闪而过变全白（1.13.0）
+
+症状：进歌曲详情页背景一片空白；把主窗口关掉再打开时 MV **一闪而过**，随后又变回全白背景 ——
+MV 确实在加载、也确实在播，但没画在背景上，必须手动开关一次播放栏的 MV 开关。
+
+1.11.0 把「层是否显示」挂在状态标签上（CSS 里 `[data-state="playing"]` 才不透明），
+而 `showBackdropNotice()` 会在 **4.2 秒后把它当初记住的旧标签写回去**：
+
+```js
+backdrop.noticePrevious = { state: backdrop.state, ... };   // 记下「loading」
+... 4.2s 后 ...
+setBackdropMessage(previous.state, ...)                     // 把 loading 写回去
+```
+
+提示条如果是在**视频还在缓冲时**弹出的（偏移 / 画质 / 匹配确认都会弹），那一刻它就把已经在播放的视频
+降级成 `loading` —— 层立刻变透明，`.lyrics-page:has(> .mms-lyrics-bg[data-state="playing"])`
+也不再命中，ECHO 自己的白色 backdrop 重新露出来。手动开关会重建整层并重新走一遍流程，所以看起来「开关一次就好」。
+
+现在：
+
+1. **显示与标签解耦**：层由视频自身的 `data-playing` 点亮（`playing` 事件设置、`timeupdate` 复核、
+   `emptied` / 重建 / `stopBackdrop` 清除），CSS 的透明规则也改用 `[data-playing="true"]`；
+2. **提示条过期不降级**：`backdrop.ready`（视频真的在播）时恢复成 `playing` + 匹配标题，
+   而不是那个记下来的旧标签；
+3. **每轮轮询自愈**：视频 `!paused && readyState >= 2` 却标记丢了 → 补回 `data-playing` 与 `playing`
+   标签；注入层被 ECHO 重绘挤出 `.lyrics-page`（`parentNode` 不对）→ 重新建层并重新匹配。
+
+`verify-renderer` 覆盖：缓冲中弹出的提示条过期后视频仍然 `playing` / `data-playing="true"`、
+被改掉的显示标记会在一个轮询周期内自愈、以及既有的「卡住的流会自动重试」。
+另外把 DOM 桩的 `<video>` 变得更接近规范（`play()` 置 `readyState=4`、`load()` 重置 `paused`/`readyState`），
+否则「卡住」和「在播」在桩里无法区分。
+
 ### 偏移按钮点了没反应 / 拉条不能输入数值（1.12.0）
 
 **偏移**：`engineSetOffset()` 只更新了 `state.mvOffset` 与数据库里的值，**没有更新

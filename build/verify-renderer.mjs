@@ -76,9 +76,12 @@ class Element {
   set innerHTML(value) { this._innerHTML = String(value); }
   get outerHTML() { return `<${this.tagName.toLowerCase()} class="${this.className}">`; }
 
-  play() { this.paused = false; this.dispatch('playing'); return Promise.resolve(); }
+  // Faithful enough for the background layer: play/pause flip `paused` and
+  // `readyState`, and load() resets both (per spec), which is what makes a stalled
+  // source distinguishable from a running one.
+  play() { this.paused = false; this.readyState = 4; this.dispatch('playing'); return Promise.resolve(); }
   pause() { this.paused = true; this.dispatch('pause'); }
-  load() {}
+  load() { this.paused = true; this.readyState = 0; }
   removeAttribute(name) { delete this.attributes[name]; if (name === 'src') this.src = ''; }
 
   get className() { return this.classList.toString(); }
@@ -2042,6 +2045,108 @@ const run = async () => {
       buttonBefore === buttonAfter ? 'same node' : `rebuilt: ${signatureBefore} -> ${signatureAfter}`,
     );
   }
+
+  // --- a notice must not hide a video that is already playing --------------
+  // The confirmation notices (offset, quality, "matched") restore the pill label
+  // they memorised after 4.2s. Raised while the stream was still loading, that
+  // restored "loading" on top of a running video — the layer is revealed by
+  // [data-playing], so it went transparent and ECHO's own backdrop came back:
+  // the reported "MV flashes once and then the background goes white".
+  const noticeTrack = {
+    id: 'streaming:netease:100',
+    stableKey: 'streaming:netease:100',
+    mediaType: 'streaming',
+    provider: 'netease',
+    providerTrackId: '100',
+    title: '通知的歌',
+    artist: '艺人',
+    duration: 200,
+  };
+  mainResponses.mvGetSelected = { ok: true, result: null };
+  mainResponses.mvSearchNetworkCandidatesForSnapshot = {
+    ok: true,
+    result: [{ id: 'cand-notice', title: '通知的歌 MV', uploader: 'UP', url: 'https://www.bilibili.com/video/BVNOTICE', providerUrl: 'https://www.bilibili.com/video/BVNOTICE', score: 0.9, viewCount: 10, durationSeconds: 200, reasons: [] }],
+  };
+  mainResponses.mvSelectVideo = {
+    ok: true,
+    result: {
+      id: 'video-notice',
+      sourceId: 'BVNOTICE',
+      provider: 'bilibili',
+      title: '通知的歌 MV',
+      providerUrl: 'https://www.bilibili.com/video/BVNOTICE',
+      mediaUrl: 'echo-mv://stream/video-notice/bilibili-qn-80',
+      qualityLabel: '1080P',
+      playableInApp: true,
+      offsetMs: 0,
+      durationSeconds: 200,
+    },
+  };
+  mainResponses.mvSetOffset = { ok: true, result: { id: 'video-notice', offsetMs: 500 } };
+  player.status = async () => ({
+    state: 'playing',
+    currentTrackId: 'streaming:netease:100',
+    positionSeconds: 5,
+    durationSeconds: 200,
+    currentTrack: noticeTrack,
+  });
+
+  const noticePlay = Element.prototype.play;
+  // Hold playback so the stream sits in `loading` while the notice is raised.
+  Element.prototype.play = function heldPlay() { return Promise.resolve(); };
+  try {
+    await waitFor(
+      () => String(lyricsPage.querySelector('.mms-backdrop-video')?.src).includes('video-notice'),
+      'notice test stream handed over',
+      12_000,
+    );
+    const noticeLayer = lyricsPage.querySelector('.mms-lyrics-bg');
+    check(
+      'the stream is loading and hidden before it plays',
+      noticeLayer?.dataset.state === 'loading' && noticeLayer?.dataset.playing === 'false',
+      `state=${noticeLayer?.dataset.state} playing=${noticeLayer?.dataset.playing}`,
+    );
+    const noticeNudge = lyricsPage.querySelector('.mms-mv-panel')
+      ?.querySelectorAll('.mms-ghost')
+      .find((item) => item.textContent === '+0.5s');
+    noticeNudge?.click();
+    await waitFor(
+      () => String(lyricsPage.querySelector('.mms-backdrop-status')?.textContent || '').includes('MV 偏移'),
+      'offset notice raised while loading',
+      8000,
+    );
+  } finally {
+    // Playback is allowed from here on.
+    Element.prototype.play = noticePlay;
+  }
+  const noticeLayer = lyricsPage.querySelector('.mms-lyrics-bg');
+  await waitFor(() => noticeLayer?.dataset.state === 'playing', 'the video starts playing', 10_000);
+  check(
+    'the layer is revealed by the video itself, not by a label',
+    noticeLayer?.dataset.playing === 'true',
+    `playing=${noticeLayer?.dataset.playing} state=${noticeLayer?.dataset.state}`,
+  );
+  // The notice raised while loading expires ~4.2s after the click; the label it
+  // restores must not knock the running video out of the reveal state.
+  await waitFor(
+    () => String(lyricsPage.querySelector('.mms-backdrop-status')?.dataset.visible) === 'false',
+    'the loading-time notice expires',
+    12_000,
+  );
+  check(
+    'an expiring notice does not hide a playing video',
+    noticeLayer?.dataset.state === 'playing' && noticeLayer?.dataset.playing === 'true',
+    `state=${noticeLayer?.dataset.state} playing=${noticeLayer?.dataset.playing}`,
+  );
+
+  // --- a lost reveal flag is repaired by the supervisor timer --------------
+  noticeLayer.dataset.playing = 'false';
+  await waitFor(() => noticeLayer.dataset.playing === 'true', 'the reveal flag self-heals', 8000);
+  check(
+    'a lost reveal flag is repaired on the next poll',
+    noticeLayer.dataset.playing === 'true',
+    `playing=${noticeLayer.dataset.playing}`,
+  );
 
   // --- accounts + QR -------------------------------------------------------
   const navTabs = pageRoot.querySelectorAll('.mms-nav-tab');
