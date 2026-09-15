@@ -290,6 +290,45 @@ Steam 版的 `.lyrics-backdrop` 带 `isolation:isolate` + `contain:paint`，
 `verify-renderer` 用一个「`play()` 永不触发 `playing`」的桩覆盖了这两点：
 层保持 `loading`、状态条显示「正在加载」、并且在 20 秒内自动走到了 `mvResolveMediaUrl`（重试档位）。
 
+### 背景层的显示条件：照社区版改回「有流就显示」（1.14.0）
+
+1.13.0 之后仍然有「进详情页一片空白、要手动开关一次」的复现。回头逐行对照社区版才发现，
+**问题出在模组自己发明的「显示门」上**，而不是事件时序：
+
+社区版 `ECHO-main/src/renderer/components/lyrics/MvPanel.tsx` 只在**确实有可播放地址**时渲染
+背景容器（`showImmersiveBackground`），而 `styles/lyrics.css` 里那个容器**没有任何「是否在播放」的门**：
+
+```css
+.lyrics-mv-background { position:absolute; inset:0; z-index:0; overflow:hidden; background:#101820; }
+.lyrics-page:has(.lyrics-mv-background) .lyrics-backdrop { background: transparent; }
+.lyrics-page:has(.lyrics-mv-background) .lyrics-backdrop::before,
+.lyrics-page:has(.lyrics-mv-background) .lyrics-backdrop::after { opacity: 0; }
+```
+
+也就是说：**容器一在，「层就可见、app 自己的背景就让位」**，与播放状态无关；
+视频有没有画面是 `<video>` 自己的事（还没出画面时它是透明的，而容器是深色底）。
+
+模组从 1.11.0 起把「层是否不透明」挂在状态标签上（`[data-state="playing"]`，1.13.0 改成
+`[data-playing="true"]`），于是**任何一次标签丢失或被写回，都会让一个正在播放（或正在加载）的 MV
+彻底不可见** —— 提示条过期回写、ECHO 重绘重建层、`playing` 事件落在被替换掉的 `<video>` 上都会触发。
+手动开关之所以有效，是因为它重建整层、重新走一遍流程，把标签重新写成 playing。
+
+现在与社区版对齐：
+
+- `data-source="ready"`（层**持有流地址**）就是显示条件：交出流时设置、`stopBackdrop` 与重建层时清掉；
+  `data-playing` 只用于诊断和「正在播放」的提示，不再参与显示；
+- app 背景让位同样看 `data-source="ready"`（对应社区的 `:has(.lyrics-mv-background)`）；
+- 轮询每轮复核：层里有 `src` 就补回 `data-source="ready"`（即使视频还没开始播），
+  若视频「没暂停且已出画面」再补 `data-playing` 与 `playing` 标签；
+- 对齐社区版的 `<video>`：`preload="metadata"`，并在 `loadedmetadata` 与 `canplay` 时显式 `play()`
+  （社区版在 `loadedmetadata` 里调 `playVideo()`），早于媒体就绪而被拒的 `play()` 会自动重试。
+
+`verify-renderer` 直接断言这条契约：注入的 CSS 里必须有
+`.mms-lyrics-bg[data-source="ready"]{opacity:1}`，且**不允许**再出现
+`[data-playing="true"]{opacity:1}` / `[data-state="playing"]{opacity:1}`；app 背景让位规则也必须按
+`data-source` 来。另外断言「流刚交出去、还没开始播时层就已经可见（`source=ready` / `playing=false`）」，
+以及被改掉的 `data-source` 会在一个轮询周期内自愈。
+
 ### MV 在播放却不显示 / 一闪而过变全白（1.13.0）
 
 症状：进歌曲详情页背景一片空白；把主窗口关掉再打开时 MV **一闪而过**，随后又变回全白背景 ——

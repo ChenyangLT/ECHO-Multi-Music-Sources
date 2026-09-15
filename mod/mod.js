@@ -1883,7 +1883,9 @@ const ensureBackdrop = () => {
   const node = existing ?? h('div', LYRICS_BG_CLASS);
   node.replaceChildren();
   node.dataset.state = 'idle';
-  // A fresh layer has no frames yet; the video's own `playing` event sets this.
+  // No stream yet: the layer stays transparent and the app's cover wallpaper is
+  // the background (ECHO-main renders its wrapper only once a URL exists).
+  node.dataset.source = 'none';
   node.dataset.playing = 'false';
   // A rebuilt layer starts empty, so the track that used to play in it has to be
   // matched again (see resetBackdropMatch).
@@ -1894,6 +1896,9 @@ const ensureBackdrop = () => {
   video.loop = true;
   video.autoplay = true;
   video.playsInline = true;
+  // Same preload hint ECHO-main's background <video> uses: metadata early, so the
+  // explicit play on loadedmetadata/canplay can do its job.
+  video.preload = 'metadata';
   // Deliberately NOT crossOrigin: Bilibili's CDN sends no CORS headers, and a
   // CORS-mode request fails outright (media error 4). The main process injects
   // the Referer/UA headers the CDN requires instead.
@@ -1902,6 +1907,13 @@ const ensureBackdrop = () => {
     applyBackdropStyle();
     void alignBackdropToAudio({ force: true });
     escalateShortBackdropSource();
+    // ECHO-main's own background <video> calls playVideo() on loadedmetadata when
+    // the audio is playing; without this an early play() that was refused while
+    // the media was still loading would never be retried until the next poll.
+    if (!video.paused) return;
+    void video.play?.().catch(() => {
+      /* the supervisor timer keeps retrying */
+    });
   });
   video.addEventListener('playing', () => {
     // A detached element (the layer was rebuilt) must not reveal the new one.
@@ -1923,6 +1935,15 @@ const ensureBackdrop = () => {
   video.addEventListener('emptied', () => {
     if (backdrop.video !== video) return;
     node.dataset.playing = 'false';
+  });
+  // A refused early play() (media not ready yet) is retried as soon as the element
+  // can play, which is what the community build gets from autoPlay + its
+  // loadedmetadata playVideo() call.
+  video.addEventListener('canplay', () => {
+    if (backdrop.video !== video || !video.paused) return;
+    void video.play?.().catch(() => {
+      /* the supervisor timer keeps retrying */
+    });
   });
   video.addEventListener('ended', () => {
     if (backdrop.video !== video) return;
@@ -2420,7 +2441,10 @@ const stopBackdrop = (state = 'idle') => {
   backdrop.offsetMs = 0;
   backdrop.startedAt = 0;
   backdrop.pendingTitle = '';
-  if (backdrop.node) backdrop.node.dataset.playing = 'false';
+  if (backdrop.node) {
+    backdrop.node.dataset.playing = 'false';
+    backdrop.node.dataset.source = 'none';
+  }
   setBackdropMessage(state);
 };
 
@@ -2495,7 +2519,10 @@ const playBackdropSource = (url, best, track, source) => {
   backdrop.source = source;
   backdrop.pendingTitle = best.title || track?.title || '';
   backdrop.ready = false;
-  // A new source has no frames yet; the layer hides until this one plays.
+  // This layer now owns a stream: that is what reveals it (and hands the backdrop
+  // over), exactly like ECHO-main rendering `.lyrics-mv-background` once a URL
+  // exists. A new source has no frames yet, so the playing flag is cleared.
+  if (backdrop.node) backdrop.node.dataset.source = 'ready';
   if (backdrop.node) backdrop.node.dataset.playing = 'false';
   backdrop.startedAt = Date.now();
   syncBackdropLoop();
@@ -2963,17 +2990,20 @@ const pollBackdrop = async () => {
     ensureBackdrop();
   }
 
-  // The layer is revealed by the video's own `data-playing`, but re-assert it here
-  // as well: ECHO re-renders the lyrics page, re-parents nodes and re-applies
-  // styles, and a video that is demonstrably running must never be left hidden
-  // behind the app's own backdrop. (The user-visible symptom was an MV that
-  // "loaded but was not shown", fixed only by toggling the switch.)
-  if (backdrop.node && backdrop.video?.src && !backdrop.video.paused
-      && (backdrop.video.readyState === undefined || Number(backdrop.video.readyState) >= 2)) {
-    if (backdrop.node.dataset.playing !== 'true') backdrop.node.dataset.playing = 'true';
-    if (!backdrop.ready) backdrop.ready = true;
-    if (backdrop.state !== 'playing') {
-      setBackdropMessage('playing', copy.backdropMatched(backdrop.pendingTitle || ''));
+  // The layer is revealed by `data-source`, which is what the stylesheet keys on.
+  // Re-assert it here as well: ECHO re-renders the lyrics page, re-parents nodes
+  // and re-applies styles, and a layer that owns a stream must never be left
+  // transparent behind the app's own backdrop. (The user-visible symptom was an MV
+  // that loaded but was not shown, fixed only by toggling the switch.)
+  if (backdrop.node && backdrop.video?.src) {
+    if (backdrop.node.dataset.source !== 'ready') backdrop.node.dataset.source = 'ready';
+    if (!backdrop.video.paused
+        && (backdrop.video.readyState === undefined || Number(backdrop.video.readyState) >= 2)) {
+      if (backdrop.node.dataset.playing !== 'true') backdrop.node.dataset.playing = 'true';
+      if (!backdrop.ready) backdrop.ready = true;
+      if (backdrop.state !== 'playing') {
+        setBackdropMessage('playing', copy.backdropMatched(backdrop.pendingTitle || ''));
+      }
     }
   }
 
@@ -5058,10 +5088,20 @@ const CSS = `
    later sibling of the app's .lyrics-backdrop (which is isolation:isolate +
    contain:paint, so a z-index:-1 layer would never be visible); equal z-index
    with later DOM order paints over the app's gradient, and .lyrics-left-panel
-   (z-index 7) keeps every lyric line above the video. */
-.mms-lyrics-bg{--mms-immersive-blur:0px;--mms-immersive-brightness:100%;--mms-immersive-overlay:0;position:absolute;inset:0;z-index:0;overflow:hidden;background:#101820;cursor:grab;touch-action:none;opacity:0;transition:opacity .45s ease}
+   (z-index 7) keeps every lyric line above the video.
+
+   Visibility mirrors ECHO-main's own MV wrapper (.lyrics-mv-background): the
+   community renders it only once a playable URL exists and keys the backdrop
+   hand-over on its *presence* — .lyrics-page:has(.lyrics-mv-background)
+   .lyrics-backdrop { background: transparent } — never on a playback state.
+   Gating the layer on "is it playing yet" is what left an MV that was still
+   buffering (or whose state label had been restored by an expiring notice)
+   invisible until the player-bar switch was toggled by hand. data-source="ready"
+   means "this layer owns a stream URL"; the video paints itself as soon as it has
+   frames. */
+.mms-lyrics-bg{--mms-immersive-blur:0px;--mms-immersive-brightness:100%;--mms-immersive-overlay:0;position:absolute;inset:0;z-index:0;overflow:hidden;background:#101820;cursor:grab;touch-action:none;opacity:0;transition:opacity .35s ease}
+.mms-lyrics-bg[data-source="ready"]{opacity:1}
 .mms-lyrics-bg[data-dragging="true"]{cursor:grabbing}
-.mms-lyrics-bg[data-playing="true"]{opacity:1}
 .mms-lyrics-bg::after{position:absolute;inset:0;background:linear-gradient(90deg,rgba(8,11,16,.72),rgba(8,11,16,.42) 48%,rgba(8,11,16,.62)),linear-gradient(180deg,rgba(8,11,16,.22),rgba(8,11,16,.68));content:"";opacity:var(--mms-immersive-overlay);pointer-events:none}
 /* Size / fitting / zoom / position of the MV: the box is centred and the video
    fills it according to the chosen fitting, exactly like background-size +
@@ -5070,12 +5110,13 @@ const CSS = `
 /* The fit preset list; the raw value lives on the layer as data-fit. */
 /* ECHO-main floors the dark-theme overlay so lyrics stay readable. */
 html[data-theme="dark"] .mms-lyrics-bg::after{opacity:max(var(--mms-immersive-overlay),.42)}
-/* The app's own backdrop steps aside only while the video is on screen, so the
-   user's theme / cover wallpaper comes back when the background is idle. */
-.lyrics-page:has(> .mms-lyrics-bg[data-playing="true"]) > .lyrics-backdrop{background:transparent}
-.lyrics-page:has(> .mms-lyrics-bg[data-playing="true"]) > .lyrics-backdrop::before,
-.lyrics-page:has(> .mms-lyrics-bg[data-playing="true"]) > .lyrics-backdrop::after,
-.lyrics-page:has(> .mms-lyrics-bg[data-playing="true"]) > .lyrics-backdrop > .lyrics-backdrop-source{opacity:0}
+/* The app's own backdrop steps aside as soon as the layer owns a stream — the
+   same "presence, not playback" rule ECHO-main uses — so the cover wallpaper comes
+   back only when there is nothing to show. */
+.lyrics-page:has(> .mms-lyrics-bg[data-source="ready"]) > .lyrics-backdrop{background:transparent}
+.lyrics-page:has(> .mms-lyrics-bg[data-source="ready"]) > .lyrics-backdrop::before,
+.lyrics-page:has(> .mms-lyrics-bg[data-source="ready"]) > .lyrics-backdrop::after,
+.lyrics-page:has(> .mms-lyrics-bg[data-source="ready"]) > .lyrics-backdrop > .lyrics-backdrop-source{opacity:0}
 /* mvLyricsReadabilityEnhanced — ECHO-main's stronger readability block. */
 .mms-lyrics-bg[data-readability="true"] ~ .lyrics-left-panel .lyrics-line,
 .mms-lyrics-bg[data-readability="true"] ~ .lyrics-left-panel .lyrics-line[data-active="true"]{color:var(--lyrics-readable-color,#fff);text-shadow:0 2px 18px rgba(0,0,0,.62),0 1px 2px rgba(0,0,0,.52);-webkit-text-stroke:.012em rgba(0,0,0,.48);paint-order:stroke fill}

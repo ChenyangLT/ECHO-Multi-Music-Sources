@@ -285,6 +285,8 @@ const player = {
 
 let disposedCss = 0;
 let disposedSidebar = 0;
+// The injected stylesheet, so the MV layer's visibility contract can be asserted.
+let injectedCss = '';
 const toasts = [];
 const settingsSaves = [];
 
@@ -332,7 +334,11 @@ const echoExternalMod = {
   player,
   main: { invoke: invokeMain },
   extend: {
-    css: (id, cssText) => { calls.push({ method: 'extend.css', payload: { id, length: cssText.length } }); return () => { disposedCss += 1; }; },
+    css: (id, cssText) => {
+      calls.push({ method: 'extend.css', payload: { id, length: cssText.length } });
+      injectedCss = cssText;
+      return () => { disposedCss += 1; };
+    },
   },
   sidebar: {
     register: (page) => {
@@ -435,6 +441,24 @@ const run = async () => {
 
   check('sidebar page registered', Boolean(sidebarPage), sidebarPage ? `id=${sidebarPage.id} label=${sidebarPage.label}` : 'none');
   check('page css injected', calls.some((call) => call.method === 'extend.css'), `${calls.find((call) => call.method === 'extend.css')?.payload?.length ?? 0} bytes`);
+
+  // The MV layer's visibility contract, mirroring ECHO-main's own background
+  // wrapper: it appears when the layer OWNS A STREAM, and the app's backdrop hands
+  // over on that same condition. Keying either on a playback label is what made an
+  // MV that was loading (or whose label an expiring notice restored) invisible
+  // until the player-bar switch was toggled by hand.
+  check(
+    'the MV layer is revealed by owning a stream, not by a playback label',
+    /\.mms-lyrics-bg\[data-source="ready"\]\{opacity:1\}/u.test(injectedCss)
+      && !/\.mms-lyrics-bg\[data-playing="true"\]\{opacity:1\}/u.test(injectedCss)
+      && !/\.mms-lyrics-bg\[data-state="playing"\]\{opacity:1\}/u.test(injectedCss),
+    `source=${/\[data-source="ready"\]\{opacity:1\}/u.test(injectedCss)} playing-gate=${/\[data-playing="true"\]\{opacity:1\}/u.test(injectedCss)}`,
+  );
+  check(
+    'the app backdrop hands over as soon as the layer owns a stream',
+    /:has\(> \.mms-lyrics-bg\[data-source="ready"\]\) > \.lyrics-backdrop\{background:transparent\}/u.test(injectedCss),
+    'declaration found',
+  );
 
   // Mount the page the way the loader does.
   sidebarPage.render(pageRoot, { toast: (message) => toasts.push(message), echo: {}, config: echoExternalMod.config });
@@ -1857,6 +1881,14 @@ const run = async () => {
       layer?.dataset.state === 'loading',
       `state=${layer?.dataset.state}`,
     );
+    // The whole point: owning a stream reveals the layer, exactly like ECHO-main
+    // rendering its background wrapper once a URL exists. Waiting for "playing"
+    // left the MV invisible (the reported blank page) even though it was loading.
+    check(
+      'owning a stream reveals the layer before it plays',
+      layer?.dataset.source === 'ready' && layer?.dataset.playing === 'false',
+      `source=${layer?.dataset.source} playing=${layer?.dataset.playing}`,
+    );
     check(
       'the status pill says the stream is still loading',
       String(lyricsPage.querySelector('.mms-backdrop-status')?.textContent || '').includes('正在加载'),
@@ -2135,17 +2167,23 @@ const run = async () => {
   );
   check(
     'an expiring notice does not hide a playing video',
-    noticeLayer?.dataset.state === 'playing' && noticeLayer?.dataset.playing === 'true',
-    `state=${noticeLayer?.dataset.state} playing=${noticeLayer?.dataset.playing}`,
+    noticeLayer?.dataset.state === 'playing' && noticeLayer?.dataset.playing === 'true'
+      && noticeLayer?.dataset.source === 'ready',
+    `state=${noticeLayer?.dataset.state} playing=${noticeLayer?.dataset.playing} source=${noticeLayer?.dataset.source}`,
   );
 
-  // --- a lost reveal flag is repaired by the supervisor timer --------------
+  // --- a lost visibility flag is repaired by the supervisor timer ----------
   noticeLayer.dataset.playing = 'false';
-  await waitFor(() => noticeLayer.dataset.playing === 'true', 'the reveal flag self-heals', 8000);
+  noticeLayer.dataset.source = 'none';
+  await waitFor(
+    () => noticeLayer.dataset.playing === 'true' && noticeLayer.dataset.source === 'ready',
+    'the reveal flags self-heal',
+    8000,
+  );
   check(
     'a lost reveal flag is repaired on the next poll',
-    noticeLayer.dataset.playing === 'true',
-    `playing=${noticeLayer.dataset.playing}`,
+    noticeLayer.dataset.playing === 'true' && noticeLayer.dataset.source === 'ready',
+    `playing=${noticeLayer.dataset.playing} source=${noticeLayer.dataset.source}`,
   );
 
   // --- accounts + QR -------------------------------------------------------
