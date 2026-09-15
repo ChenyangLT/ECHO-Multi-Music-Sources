@@ -99,14 +99,32 @@ class Element {
     this.childNodes = this.children;
   }
 
+  /** Detaches from the current parent, so append/insertBefore behave like the DOM. */
+  detach() {
+    const parent = this.parentNode;
+    if (!parent?.children) return;
+    parent.children = parent.children.filter((child) => child !== this);
+    parent.childNodes = parent.children;
+  }
+
+  get nextElementSibling() {
+    const parent = this.parentNode;
+    if (!parent?.children) return null;
+    const index = parent.children.indexOf(this);
+    if (index < 0) return null;
+    return parent.children[index + 1] ?? null;
+  }
+
   append(...nodes) {
     for (const node of nodes) {
       if (node === null || node === undefined) continue;
       const child = typeof node === 'string' ? new Element('#text') : node;
       if (typeof node === 'string') child.textContent = node;
+      child.detach();
       child.parentNode = this;
       this.children.push(child);
     }
+    this.childNodes = this.children;
   }
 
   appendChild(node) { this.append(node); return node; }
@@ -115,6 +133,7 @@ class Element {
     const child = typeof node === 'string' ? new Element('#text') : node;
     if (typeof node === 'string') child.textContent = node;
     const index = reference ? this.children.indexOf(reference) : -1;
+    child.detach();
     child.parentNode = this;
     if (index >= 0) this.children.splice(index, 0, child);
     else this.children.push(child);
@@ -2184,6 +2203,38 @@ const run = async () => {
     'a lost reveal flag is repaired on the next poll',
     noticeLayer.dataset.playing === 'true' && noticeLayer.dataset.source === 'ready',
     `playing=${noticeLayer.dataset.playing} source=${noticeLayer.dataset.source}`,
+  );
+
+  // --- the layer must sit AFTER ECHO's opaque lyrics backdrop --------------
+  // Both are absolutely positioned at z-index 0, so the later sibling paints on
+  // top. ECHO commits the lyrics page before its backdrop exists, so the first
+  // injection used to land as the page's FIRST child; the backdrop then mounted
+  // after it and painted straight over the video. The user saw ECHO's own
+  // bright-white centre fading to grey at the sides instead of the MV, and
+  // toggling the switch re-created the nodes in the right order — which is why the
+  // switch "fixed" it. The supervisor timer now re-asserts the order every pass.
+  const orderedLayer = () => lyricsPage.querySelector('.mms-lyrics-bg');
+  const orderOf = () => {
+    const kids = lyricsPage.children;
+    return { backdrop: kids.indexOf(lyricsBackdrop), layer: kids.indexOf(orderedLayer()) };
+  };
+  check('the MV layer is placed after the app backdrop', orderOf().layer === orderOf().backdrop + 1, JSON.stringify(orderOf()));
+  // Simulate ECHO re-committing the page with the backdrop before our layer.
+  lyricsPage.insertBefore(orderedLayer(), lyricsBackdrop);
+  check(
+    'the layer can be pushed in front of the backdrop for the test',
+    orderOf().layer < orderOf().backdrop,
+    JSON.stringify(orderOf()),
+  );
+  await waitFor(
+    () => orderOf().layer === orderOf().backdrop + 1,
+    'the supervisor timer restores the stacking order',
+    8000,
+  );
+  check(
+    'a layer that ended up in front of the backdrop is moved back behind it',
+    orderOf().layer === orderOf().backdrop + 1,
+    JSON.stringify(orderOf()),
   );
 
   // --- accounts + QR -------------------------------------------------------

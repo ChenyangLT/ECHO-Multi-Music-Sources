@@ -5,7 +5,7 @@
 把 **ECHO 社区版（ECHO Community）** 的在线音源移植到 **Steam 版 ECHO** 的
 [**ShinawaseLoader**](https://github.com/ChunchunOwO/ShinawaseLoader) 模组。
 
-[![Version](https://img.shields.io/badge/version-1.14.0-7c5cff?style=flat-square)](https://github.com/ChenyangLT/ECHO-Multi-Music-Sources/releases)
+[![Version](https://img.shields.io/badge/version-1.15.0-7c5cff?style=flat-square)](https://github.com/ChenyangLT/ECHO-Multi-Music-Sources/releases)
 [![License](https://img.shields.io/badge/license-LGPL--3.0-7c5cff?style=flat-square)](LICENSE)
 [![Platform](https://img.shields.io/badge/ECHO-Steam-22c55e?style=flat-square)](https://store.steampowered.com/)
 [![Loader](https://img.shields.io/badge/ShinawaseLoader-1.6.7%2B-0ea5e9?style=flat-square)](https://github.com/ChunchunOwO/ShinawaseLoader)
@@ -72,7 +72,7 @@ Steam 版 ECHO 把第三方音乐平台的能力裁掉了：`app.asar` 里仍然
 ### 2. 安装本模组
 
 1. 到 [**Releases**](https://github.com/ChenyangLT/ECHO-Multi-Music-Sources/releases/latest) 下载
-   **`echo.multi-music-sources-1.14.0.echomod`**（[直链](https://github.com/ChenyangLT/ECHO-Multi-Music-Sources/releases/download/v1.14.0/echo.multi-music-sources-1.14.0.echomod)；
+   **`echo.multi-music-sources-1.15.0.echomod`**（[直链](https://github.com/ChenyangLT/ECHO-Multi-Music-Sources/releases/download/v1.15.0/echo.multi-music-sources-1.15.0.echomod)；
    仓库里的 `dist/` 也放了同一份）；
 2. 把它**拖进 Loader 的 Mods 页面**，或者直接放进 `ECHO/Mods/`（Loader 会自动导入并移到 `Mods/.processed/`）；
 3. 在 Loader 里**启用「ECHO 多平台音源」**；
@@ -245,7 +245,7 @@ handlers, so `window.echo.streaming` is `null`. This mod runs the community plat
 playback to ECHO's real player through ShinawaseLoader's player runtime.
 
 **Requirements** — Windows, ECHO **Steam**, [ShinawaseLoader](https://github.com/ChunchunOwO/ShinawaseLoader) **1.6.7+**
-(tested with 1.7.2). Install the loader first, then grab `echo.multi-music-sources-1.14.0.echomod` from
+(tested with 1.7.2). Install the loader first, then grab `echo.multi-music-sources-1.15.0.echomod` from
 [**Releases**](https://github.com/ChenyangLT/ECHO-Multi-Music-Sources/releases/latest) and drop it into the
 loader's Mods page (or into `ECHO/Mods/`), enable it, and restart the game. Always launch through
 `ECHO.modded.exe`, never the stock `ECHO.exe`.

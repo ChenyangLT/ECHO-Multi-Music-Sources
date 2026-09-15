@@ -290,6 +290,49 @@ Steam 版的 `.lyrics-backdrop` 带 `isolation:isolate` + `contain:paint`，
 `verify-renderer` 用一个「`play()` 永不触发 `playing`」的桩覆盖了这两点：
 层保持 `loading`、状态条显示「正在加载」、并且在 20 秒内自动走到了 `mvResolveMediaUrl`（重试档位）。
 
+### 真正的根因：背景层被插到了 app 背景**前面**（1.15.0）
+
+用户在追问下给出了关键线索：**「中间亮白色，向左右两边逐渐变暗」**。这正是 ECHO 自己的
+`.lyrics-backdrop`（浅色主题）：
+
+```css
+.lyrics-backdrop {
+  background:
+    radial-gradient(ellipse at 70% 22%, rgba(255,255,255,.82), transparent 38%),
+    …,
+    linear-gradient(180deg, #fbfbfc 0%, #f4f4f6 52%, #ebecef 100%);
+}
+```
+—— 中间一块亮白、往两侧渐暗。也就是说：**用户看到的一直是 ECHO 自己的背景，MV 层根本没被画出来**。
+
+而 `.lyrics-backdrop` 是 `position:absolute; z-index:0`，模组层同样是 `z-index:0`：
+**同 z-index 时后出现的在上**。所以只有一种可能 —— **模组层排在 `.lyrics-backdrop` 前面**，
+被这层不透明的背景整个盖住。
+
+为什么会排到前面：ECHO 先提交 `.lyrics-page`，`.lyrics-backdrop` 往往**稍后**才挂上
+（歌词 / 封面就绪时）。模组第一次注入时 `page.querySelector(':scope > .lyrics-backdrop')` 取到 null，
+于是走 `insertBefore(node, page.firstChild)` —— **插成了页面的第一个子节点**；随后 React 把
+`.lyrics-backdrop` 插到它的已知兄弟（`.lyrics-left-panel` 等）之前，也就是**排在模组层之后**，
+于是这层不透明背景把视频盖住了。
+
+手动开关之所以有效：`stopBackdrop()` 会移除节点，再打开时 `.lyrics-backdrop` 已经存在，
+`ensureBackdrop()` 走进「插到 backdrop 之后」的分支 —— 位置对了，MV 就出来了。
+**这解释了之前所有版本的症状**：从 1.11.0 起我一直在改「显示门」（`data-state` → `data-playing`
+→ `data-source`），但层被压在下面时，这些开关全都没有意义。
+
+修法（`placeBackdropLayer()`）：
+
+- 新建层时**只 append 到页面末尾**（绝不插到最前面）；
+- 每次 `ensureBackdrop()`（轮询、MutationObserver 每次 DOM 变化都会走到）都复核
+  **兄弟顺序**：`.lyrics-backdrop` 存在且它的 `nextElementSibling` 不是模组层时，
+  用 `insertBefore(node, anchor.nextElementSibling)` 把层移回紧随其后的位置
+  （`insertBefore` 会移动已存在的节点，`null` 参照即追加）；
+- 层被 ECHO 重绘挤出页面（`parentNode` 不对）时仍然重建并重新匹配。
+
+`verify-renderer` 增加回归：断言层紧跟在 backdrop 之后；把层手动移到 backdrop 之前（模拟出错的注入），
+一个轮询周期内必须被移回。为了让这个断言有意义，DOM 桩也补上了
+`nextElementSibling`，并让 `append` / `insertBefore` **像真实 DOM 一样移动已有节点**。
+
 ### 背景层的显示条件：照社区版改回「有流就显示」（1.14.0）
 
 1.13.0 之后仍然有「进详情页一片空白、要手动开关一次」的复现。回头逐行对照社区版才发现，

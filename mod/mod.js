@@ -1859,6 +1859,31 @@ const DRAWER_CLASS = 'mms-mv-drawer';
 const lyricsPage = () => document.querySelector(LYRICS_PAGE_SELECTOR);
 
 /**
+ * Puts the background layer directly AFTER ECHO's own `.lyrics-backdrop`.
+ *
+ * This is the whole stacking contract: both are absolutely positioned with
+ * z-index 0, so the later sibling paints on top. On the first injection ECHO's
+ * backdrop may not be mounted yet (the lyrics page commits before its cover /
+ * lyrics exist), in which case the layer was inserted as the page's FIRST child —
+ * and then the backdrop, being opaque in every theme
+ * (`.lyrics-backdrop{background: radial-gradient(...), linear-gradient(#fbfbfc…)}`),
+ * painted straight over the video. That is exactly the reported symptom: instead
+ * of the MV you saw ECHO's own bright-white centre fading to grey at the sides.
+ * Toggling the player-bar switch re-created the nodes while the backdrop already
+ * existed, so the layer landed in the right place and the MV appeared.
+ */
+const placeBackdropLayer = (page, node) => {
+  if (!page || !node) return;
+  const anchor = page.querySelector(LYRICS_BACKDROP_SELECTOR);
+  // Still mounting: leave it at the end of the page and let the next poll (or the
+  // mutation observer) place it once the backdrop exists.
+  if (!anchor || anchor === node) return;
+  if (anchor.nextElementSibling === node) return;
+  // insertBefore moves an existing node, and a null reference appends.
+  page.insertBefore(node, anchor.nextElementSibling);
+};
+
+/**
  * Creates (or reuses) the immersive background layer inside ECHO's lyrics page.
  * Returns null when the lyrics page is not on screen, which keeps the video out
  * of every other route.
@@ -1878,7 +1903,12 @@ const ensureBackdrop = () => {
   // rebuilding its children, leaves the tracked node detached — and then the
   // old <video> is gone even though `existing` may still be found.
   const live = Boolean(existing) && backdrop.node === existing && backdrop.video?.parentNode === existing;
-  if (live) return existing;
+  if (live) {
+    // Re-assert the stacking order on every pass: ECHO inserting its backdrop
+    // after our layer (or React reordering the page) must not bury the MV.
+    placeBackdropLayer(page, existing);
+    return existing;
+  }
 
   const node = existing ?? h('div', LYRICS_BG_CLASS);
   node.replaceChildren();
@@ -1971,19 +2001,13 @@ const ensureBackdrop = () => {
   backdrop.generation += 1;
 
   if (!existing) {
-    // Keep the app's own lyrics backdrop from painting over the video, but only
-    // while the video is actually visible, so theme/cover wallpapers come back
-    // when the background is idle.
-    const anchor = page.querySelector(LYRICS_BACKDROP_SELECTOR);
-    if (anchor?.nextSibling) {
-      page.insertBefore(node, anchor.nextSibling);
-    } else if (anchor) {
-      page.append(node);
-    } else {
-      page.insertBefore(node, page.firstChild);
-    }
+    // Appended first, then placed directly after ECHO's backdrop (see
+    // placeBackdropLayer — never as the first child, which would put the video
+    // underneath the app's opaque backdrop).
+    page.append(node);
     attachBackdropGestures(node);
   }
+  placeBackdropLayer(page, node);
 
   syncBackdropLoop();
   return node;
