@@ -290,6 +290,35 @@ Steam 版的 `.lyrics-backdrop` 带 `isolation:isolate` + `contain:paint`，
 `verify-renderer` 用一个「`play()` 永不触发 `playing`」的桩覆盖了这两点：
 层保持 `loading`、状态条显示「正在加载」、并且在 20 秒内自动走到了 `mvResolveMediaUrl`（重试档位）。
 
+### 调整数值时面板向上跳 / 出现两个候选框（1.16.0）
+
+**面板向上跳**：真实浏览器里，把一个滚动容器的子节点整体替换掉（`replaceChildren`）会把 `scrollTop`
+截断到 0 —— 因为替换的一瞬间内容是空的。而抽屉（歌词页「MV 背景设置」）与侧栏背景设置页都很长，
+点靠近底部的调节按钮 / 数值框上下箭头时，任何一次重建都会把面板弹回顶部，
+看起来就是「详情页向上滑动」。
+
+触发重建的路径有三条：`persistBackgroundSettings()` 会置 `backdrop.drawerDirty`（下一次轮询重建）、
+`reportNotice` / `reportError` 同样置脏、`engineSetOffset()`（±0.5s 按钮）直接重建。
+
+现在：
+
+- `renderBackdropDrawerBody()` 重建前记住 `scrollTop`、重建后写回；
+- 页面级 `render()` 也记住最近可滚动祖先的 `scrollTop` 并恢复；
+- 数值输入框在 `focus` / `mousedown` 时记下所属滚动容器的位置并在下一帧写回，
+  避免浏览器为了「露出获得焦点的元素」而滚动面板。
+
+为了这条断言有意义，DOM 桩的 `replaceChildren` 也按真实浏览器行为**在替换时把 `scrollTop` 归零**。
+
+**两个候选框**：背景设置页原来同时渲染两份候选列表 ——
+① 模组自己的名称搜索（`findMvCandidates`，自动匹配用的那一套，带 `用这个` / `预览`），
+② 社区 MV 引擎的打分搜索（`mvSearchNetworkCandidatesForSnapshot`，带 `应用`）。
+两者其实是**同一首歌、同一个 B 站搜索**的两条路径，于是同一批视频出现两次、按钮还不一样。
+
+现在 `mergedBackdropCandidates()` 按 **BV 号**把两份合并成一份（信息更全的那条胜出：封面 / 匹配度 /
+理由 / 播放量），只渲染一个列表，动作为 `用这个`（绑定并切换）/ `预览` / `在浏览器打开`；
+引擎区只保留引擎状态、当前选中视频的画质与逐曲偏移。
+`verify-renderer` 断言 `.mms-bg-candidates` 在背景设置页**只有一个**。
+
 ### 真正的根因：背景层被插到了 app 背景**前面**（1.15.0）
 
 用户在追问下给出了关键线索：**「中间亮白色，向左右两边逐渐变暗」**。这正是 ECHO 自己的

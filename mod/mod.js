@@ -2220,13 +2220,31 @@ const bodyClicked = (node) => {
   });
 };
 
-/** Rebuilds the drawer body from the current configuration. */
+/**
+ * The nearest scrollable ancestor, so a re-render can restore its offset.
+ *
+ * Replacing a panel's children resets its scroll position, and the settings page /
+ * drawer are long: adjusting a value near the bottom used to snap the panel back to
+ * the top ("the page slides up").
+ */
+const scrollableAncestor = (node) => {
+  for (let parent = node?.parentNode; parent; parent = parent.parentNode) {
+    const height = Number(parent.scrollHeight);
+    const visible = Number(parent.clientHeight);
+    if (Number.isFinite(height) && Number.isFinite(visible) && visible > 0 && height > visible) return parent;
+  }
+  return null;
+};
+
+/** Rebuilds the drawer body from the current configuration, keeping its scroll. */
 const renderBackdropDrawerBody = () => {
   const drawer = backdrop.drawer;
   if (!drawer) return;
   const body = drawer.querySelector('.mms-mv-drawer-body');
   if (!body) return;
+  const scrollTop = Number(body.scrollTop) || 0;
   body.replaceChildren(renderBackgroundSettings());
+  if (scrollTop > 0) body.scrollTop = scrollTop;
   backdrop.drawerDirty = false;
 };
 
@@ -3953,13 +3971,7 @@ const playEngineVideo = async (video, candidate) => {
   return runBackdropSteps(steps, track, token);
 };
 
-/**
- * Applies a candidate of the community engine's list.
- *
- * The candidate is remembered through `bindUrl` (a `manual` binding, exactly
- * like a pasted link), so the user's pick survives a restart and wins over the
- * automatic name matching next time the song plays.
- */
+/** Plays a candidate of the merged list — kept for the panel/panel tests. */
 const engineApplyCandidate = async (candidate) => {
   const url = candidateUrlOf(candidate);
   if (!url) {
@@ -4170,6 +4182,23 @@ const bgSlider = (key, min, max, step, suffix, options = {}) => {
   number.step = String(step);
   number.value = input.value;
   number.setAttribute('aria-label', key);
+  // Focusing (or clicking the spinner of) a number field makes the browser scroll
+  // its panel to reveal the element, which slid the settings panel around while
+  // adjusting values. Put the scroll offset back where it was.
+  const holdScroll = () => {
+    const scrollers = [];
+    for (let node = wrap.parentNode; node; node = node.parentNode) {
+      if (Number.isFinite(Number(node.clientHeight)) && Number(node.clientHeight) > 0
+          && Number(node.scrollHeight) > Number(node.clientHeight)) scrollers.push(node);
+    }
+    if (!scrollers.length) return;
+    const positions = scrollers.map((node) => node.scrollTop);
+    const restore = () => scrollers.forEach((node, index) => { node.scrollTop = positions[index]; });
+    if (typeof requestAnimationFrame === 'function') requestAnimationFrame(restore);
+    else setTimeout(restore, 0);
+  };
+  number.addEventListener('focus', holdScroll);
+  number.addEventListener('mousedown', holdScroll);
 
   const commit = (value) => {
     const stored = options.transform ? options.transform.from(Number(value)) : Number(value);
@@ -4404,6 +4433,39 @@ const previewBackgroundCandidate = async (candidate) => {
   await runBackdropSteps(steps, track, token);
 };
 
+/**
+ * The candidate videos for the playing track, from both search paths, as ONE list.
+ *
+ * The settings page used to render two lists side by side — the mod's name search
+ * and the community engine's scored search — which are the same Bilibili query for
+ * the same song, so the same videos appeared twice with different buttons. They are
+ * merged by BV id (the entry carrying more information wins) and rendered once.
+ */
+const mergedBackdropCandidates = () => {
+  const byBvid = new Map();
+  const richness = (item) => (item?.thumbnailUrl ? 2 : 0)
+    + (Number.isFinite(Number(item?.score)) ? 1 : 0)
+    + (Array.isArray(item?.reasons) && item.reasons.length ? 1 : 0)
+    + (Number.isFinite(Number(item?.viewCount)) && Number(item.viewCount) > 0 ? 1 : 0);
+  const add = (item) => {
+    if (!item) return;
+    const bvid = bvidOf(item.id) || bvidOf(item.url) || bvidOf(item.providerUrl);
+    const key = bvid || String(item.id || item.url || '');
+    if (!key) return;
+    const previous = byBvid.get(key);
+    if (!previous) {
+      byBvid.set(key, { ...item, bvid });
+      return;
+    }
+    const merged = richness(item) > richness(previous) ? { ...previous, ...item } : { ...item, ...previous };
+    byBvid.set(key, { ...merged, bvid });
+  };
+  // The name-search result first (it is the order the automatic match uses).
+  for (const item of state.backgroundTest?.result?.candidates || []) add(item);
+  for (const item of state.mvCandidates?.candidates || []) add(item);
+  return [...byBvid.values()];
+};
+
 const renderBackgroundSettings = () => {
   const wrap = h('div', 'mms-background');
   const settings = backgroundConfig();
@@ -4466,36 +4528,42 @@ const renderBackgroundSettings = () => {
   testActions.append(button('mms-primary', copy.testMatch, () => void loadBackdropCandidates(state.lastTrack, {})));
   matchSection.append(testActions);
 
-  // Candidates for the playing track: clicking one remembers it for that song
-  // and switches the background to it (seeked to the current song position).
+  // Candidates for the playing track: clicking one remembers it for that song and
+  // switches the background to it (seeked to the current song position). One list,
+  // merged from the name search and the engine's scored search (see
+  // mergedBackdropCandidates).
   const bound = boundVideoForTrack();
   const candidateResult = state.backgroundTest?.result;
-  if (candidateResult) {
-    const title = state.backgroundTest?.track?.title || '';
-    matchSection.append(h('p', 'mms-muted', title ? copy.candidatesFor(title) : copy.candidatesShown(0)));
+  const mergedCandidates = mergedBackdropCandidates();
+  if (mergedCandidates.length || candidateResult) {
+    const title = state.backgroundTest?.track?.title || state.lastTrack?.title || '';
+    matchSection.append(h('p', 'mms-muted', title ? copy.candidatesFor(title) : copy.candidatesShown(mergedCandidates.length)));
     const list = h('div', 'mms-bg-candidates');
-    const chosenId = String(candidateResult.chosen?.id || '');
+    const chosenBvid = bvidOf(candidateResult?.chosen?.id) || bvidOf(candidateResult?.chosen?.url);
     const boundBvid = bound ? bvidOf(bound.providerUrl || bound.url) : '';
-    for (const candidate of (Array.isArray(candidateResult.candidates) ? candidateResult.candidates : []).slice(0, settings.candidateLimit)) {
+    const selectedBvid = bvidOf(state.mvSelected?.sourceId);
+    for (const candidate of mergedCandidates.slice(0, Math.max(settings.candidateLimit, 8))) {
       const row = h('div', 'mms-bg-candidate');
-      const id = String(candidate.id || '');
-      if (id === chosenId) row.dataset.chosen = 'true';
-      if (boundBvid && bvidOf(id) === boundBvid) row.dataset.current = 'true';
+      const bvid = candidate.bvid || bvidOf(candidate.id);
+      if (bvid && chosenBvid && bvid === chosenBvid) row.dataset.chosen = 'true';
+      if (bvid && boundBvid && bvid === boundBvid) row.dataset.current = 'true';
+      else if (bvid && selectedBvid && bvid === selectedBvid) row.dataset.current = 'true';
       const main = h('div', 'mms-bg-candidate-main');
       main.append(
         h('strong', null, candidate.title || '—'),
         h('small', 'mms-muted', [
           candidate.uploader || '',
-          candidate.duration ? formatDuration(candidate.duration) : '',
-          candidate.viewCount ? formatCount(candidate.viewCount) : '',
-          candidate.score !== null && candidate.score !== undefined ? `匹配度 ${(Number(candidate.score) * 100).toFixed(0)}%` : '',
+          candidate.duration ? formatDuration(candidate.duration) : candidate.durationSeconds ? formatDuration(candidate.durationSeconds) : '',
+          Number.isFinite(Number(candidate.viewCount)) && Number(candidate.viewCount) > 0 ? formatCount(candidate.viewCount) : '',
+          Number.isFinite(Number(candidate.score)) && candidate.score !== null ? `匹配度 ${(Number(candidate.score) * 100).toFixed(0)}%` : '',
+          (candidate.reasons || []).slice(0, 2).join(' / '),
         ].filter(Boolean).join(' · ')),
       );
       const actions = h('div', 'mms-account-actions');
       actions.append(
         button('mms-primary', copy.candidateApply, () => void applyVideoForTrack(candidateUrlOf(candidate), candidate.title)),
-        button('mms-ghost', copy.preview, () => void previewBackgroundCandidate(candidate)),
       );
+      if (bvid) actions.append(button('mms-ghost', copy.preview, () => void previewBackgroundCandidate(candidate)));
       if (candidate.url) {
         actions.append(button('mms-ghost', copy.engineOpen, () => {
           try {
@@ -4650,35 +4718,10 @@ const renderBackgroundSettings = () => {
     engineSection.append(card);
   }
 
-  // Candidate list with score + reasons, straight from the engine.
-  const candidates = state.mvCandidates?.candidates || [];
-  if (candidates.length) {
-    engineSection.append(h('p', 'mms-muted', copy.engineCandidates(candidates.length)));
-    const list = h('div', 'mms-bg-candidates');
-    for (const candidate of candidates.slice(0, 8)) {
-      const row = h('div', 'mms-bg-candidate');
-      const identified = String(candidate.id || '') === String(selected?.sourceId || '');
-      if (identified) row.dataset.current = 'true';
-      const main = h('div', 'mms-bg-candidate-main');
-      main.append(
-        h('strong', null, candidate.title || '—'),
-        h('small', 'mms-muted', [
-          candidate.uploader || '',
-          candidate.durationSeconds ? formatDuration(candidate.durationSeconds) : '',
-          Number.isFinite(Number(candidate.viewCount)) && Number(candidate.viewCount) > 0 ? formatCount(candidate.viewCount) : '',
-          Number.isFinite(Number(candidate.score)) ? `匹配度 ${(Number(candidate.score) * 100).toFixed(0)}%` : '',
-          (candidate.reasons || []).slice(0, 2).join(' / '),
-        ].filter(Boolean).join(' · ')),
-      );
-      const actions = h('div', 'mms-account-actions');
-      actions.append(
-        button('mms-primary', copy.engineApply, () => void engineApplyCandidate(candidate)),
-        button('mms-ghost', copy.engineOpen, () => void engineOpenExternal(candidate.id)),
-      );
-      row.append(candidateCover(candidate), main, actions);
-      list.append(row);
-    }
-    engineSection.append(list);
+  // The candidate list lives in the 匹配 section above (one merged list); this
+  // section only reports the engine and the video it currently has selected.
+  if (state.mvCandidates?.candidates?.length) {
+    engineSection.append(h('p', 'mms-muted', copy.engineCandidates(state.mvCandidates.candidates.length)));
   }
 
   wrap.append(engineSection);
@@ -4937,6 +4980,16 @@ const formatStoreTime = (value) => {
 };
 
 const render = () => {
+  if (!pageRoot) return;
+  // Re-rendering must not throw the user back to the top of a long settings page
+  // (adjusting a slider near the bottom used to scroll the page up).
+  const scroller = scrollableAncestor(pageRoot);
+  const scrollTop = Number(scroller?.scrollTop) || 0;
+  renderPage();
+  if (scroller && scrollTop > 0) scroller.scrollTop = scrollTop;
+};
+
+const renderPage = () => {
   if (!pageRoot) return;
   pageRoot.replaceChildren();
 

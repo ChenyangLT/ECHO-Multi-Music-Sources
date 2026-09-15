@@ -144,6 +144,9 @@ class Element {
   replaceChildren(...nodes) {
     this.children = [];
     this.childNodes = this.children;
+    // A real scroll container clamps its offset when the content is removed, which
+    // is why replacing a panel's children throws the user back to the top.
+    if (Number(this.scrollTop) > 0) this.scrollTop = 0;
     this.append(...nodes);
   }
 
@@ -1596,8 +1599,16 @@ const run = async () => {
     await waitFor(() => pageRoot.allText().includes('标题完全匹配'), 'engine candidates');
     const engineText = pageRoot.allText();
     check('engine candidates show score and reasons', engineText.includes('匹配度 93%') && engineText.includes('标题完全匹配'), engineText.slice(0, 120));
+    // The engine's scored candidates and the mod's name search are the same
+    // Bilibili query: they used to be rendered as two separate lists ("why are
+    // there two candidate boxes?"). They are merged into one now.
+    check(
+      'the settings page shows exactly one candidate list',
+      pageRoot.querySelectorAll('.mms-bg-candidates').length === 1,
+      `${pageRoot.querySelectorAll('.mms-bg-candidates').length} list(s)`,
+    );
     const engineRow = pageRoot.querySelectorAll('.mms-bg-candidate').find((row) => row.allText().includes('匹配度 93%'));
-    const engineApplyButton = engineRow?.querySelectorAll('.mms-primary').find((item) => item.textContent === '应用');
+    const engineApplyButton = engineRow?.querySelectorAll('.mms-primary').find((item) => item.textContent === '用这个');
     check('engine candidates can be applied', Boolean(engineApplyButton), engineRow?.allText().slice(0, 80) || 'no engine row');
     if (engineApplyButton) {
       engineApplyButton.click();
@@ -1966,6 +1977,35 @@ const run = async () => {
       String(drawer?.allText() || '').includes('B站小号'),
       String(drawer?.allText() || '').slice(0, 140),
     );
+
+    // Adjusting a value rebuilds the panel, and replacing a scroll container's
+    // children clamps scrollTop — which is what made the settings panel jump back
+    // to the top ("the page slides up") while adjusting values near the bottom.
+    const drawerBody = drawer?.querySelector('.mms-mv-drawer-body');
+    const drawerNumber = drawerBody?.querySelectorAll('.mms-bg-number')[0];
+    check(
+      'the drawer offers a number field to adjust',
+      Boolean(drawerBody) && Boolean(drawerNumber) && drawerNumber.type === 'number',
+      `type=${drawerNumber?.type ?? '(none)'}`,
+    );
+    if (drawerBody && drawerNumber) {
+      drawerBody.scrollTop = 140;
+      const savesBefore = calls.filter((call) => call.method === 'setSettings').length;
+      drawerNumber.value = String((Number(drawerNumber.value) || 0) + 1);
+      drawerNumber.dispatch('change');
+      await waitFor(
+        () => calls.filter((call) => call.method === 'setSettings').length > savesBefore,
+        'the drawer value change is saved',
+        8000,
+      );
+      // The panel is rebuilt on the next supervisor tick.
+      await new Promise((resolveWait) => setTimeout(resolveWait, 2400));
+      check(
+        'adjusting a value keeps the panel scroll position',
+        Number(drawerBody.scrollTop) === 140,
+        `scrollTop=${drawerBody.scrollTop}`,
+      );
+    }
     const closeDrawerButton = drawer?.querySelectorAll('.mms-mv-panel-action')[0];
     closeDrawerButton?.click();
     await settle(2);

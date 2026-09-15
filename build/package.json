@@ -16,7 +16,7 @@
     "verify:electron": "electron verify-electron-main.cjs",
     "verify:mod": "electron verify-mod-main-electron.cjs",
     "verify:mv": "electron verify-mv-protocol.cjs",
-    "verify:archive": "node verify-echomod.mjs ../dist/echo.multi-music-sources-1.15.0.echomod",
+    "verify:archive": "node verify-echomod.mjs ../dist/echo.multi-music-sources-1.16.0.echomod",
     "test": "node verify-renderer.mjs && node verify-config-ui.mjs && electron verify-electron-main.cjs && electron verify-mod-main-electron.cjs"
   },
   "dependencies": {
