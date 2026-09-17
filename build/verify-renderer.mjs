@@ -252,6 +252,8 @@ documentShim.body.append(lyricsPage, transportShell);
 
 const calls = [];
 let sidebarPage = null;
+// Every sidebar entry the mod registers (the audio page and the MV page).
+const sidebarPages = [];
 let mainResponses = {
   // The mod polls status() until the bridge reports ready before it loads
   // providers, so the default stub must look like a healthy bridge.
@@ -311,6 +313,18 @@ let disposedSidebar = 0;
 let injectedCss = '';
 const toasts = [];
 const settingsSaves = [];
+// ECHO switches routes with window CustomEvents, so the harness records what the
+// page dispatches (e.g. the transport MV button opening the song detail page).
+const navEvents = [];
+
+class CustomEvent {
+  constructor(type, options = {}) {
+    this.type = type;
+    this.detail = options.detail ?? null;
+    this.defaultPrevented = false;
+  }
+  preventDefault() { this.defaultPrevented = true; }
+}
 
 const echoExternalMod = {
   version: 1,
@@ -364,7 +378,8 @@ const echoExternalMod = {
   },
   sidebar: {
     register: (page) => {
-      sidebarPage = page;
+      sidebarPages.push(page);
+      if (!sidebarPage) sidebarPage = page;
       calls.push({ method: 'sidebar.register', payload: { id: page?.id } });
       return () => { disposedSidebar += 1; };
     },
@@ -394,7 +409,9 @@ const sandbox = {
     open: null,
     addEventListener() {},
     removeEventListener() {},
+    dispatchEvent(event) { navEvents.push(event); return true; },
   },
+  CustomEvent,
   navigator: { clipboard: { writeText: async () => {} } },
   document: documentShim,
   requestAnimationFrame: (callback) => setTimeout(() => callback(Date.now()), 0),
@@ -426,7 +443,9 @@ const sandbox = {
 };
 sandbox.globalThis = sandbox;
 
-const pageRoot = new Element('div');
+// `let`: the background/MV section renders the mod's second sidebar page into its
+// own shell and points the assertions at it, then restores the audio page.
+let pageRoot = new Element('div');
 vm.createContext(sandbox);
 // mod.js is the body of an async loader function: it may use `return`, so it is
 // compiled as one. The body executes immediately, which is what we want here.
@@ -464,6 +483,24 @@ const run = async () => {
   check('sidebar page registered', Boolean(sidebarPage), sidebarPage ? `id=${sidebarPage.id} label=${sidebarPage.label}` : 'none');
   check('page css injected', calls.some((call) => call.method === 'extend.css'), `${calls.find((call) => call.method === 'extend.css')?.payload?.length ?? 0} bytes`);
 
+  // The MV background is opt-in: the package ships it switched off, so a fresh
+  // install never goes online for a music video until the user lights the button.
+  const shippedConfig = JSON.parse(readFileSync(join(packageRoot, 'config.json'), 'utf8'));
+  check(
+    'the shipped default keeps the MV background off',
+    shippedConfig.mvEnabled === false && shippedConfig.songBackgroundEnabled === false,
+    `mvEnabled=${shippedConfig.mvEnabled} songBackgroundEnabled=${shippedConfig.songBackgroundEnabled}`,
+  );
+
+  // The transport switch reports the SETTING, not the playback moment: lit while
+  // the background is enabled, dimmed while it is off.
+  check(
+    'the transport MV button is styled lit while on and dimmed while off',
+    /\.mms-backdrop-toggle\.mms-backdrop-toggle\[data-active="false"\]\{[^}]*opacity:\.66/u.test(injectedCss)
+      && /\.mms-backdrop-toggle\.mms-backdrop-toggle\[data-active="true"\]\{[^}]*color:var\(--theme-accent-text-strong/u.test(injectedCss),
+    'dimmed + lit declarations found',
+  );
+
   // The MV layer's visibility contract, mirroring ECHO-main's own background
   // wrapper: it appears when the layer OWNS A STREAM, and the app's backdrop hands
   // over on that same condition. Keying either on a playback label is what made an
@@ -491,6 +528,51 @@ const run = async () => {
   check('page renders title', text.includes('多平台音源'), text.slice(0, 70));
   check('bridge status polled', calls.some((call) => call.method === 'status'), `${calls.filter((call) => call.method === 'status').length} status calls`);
   check('providers loaded before first render', calls.some((call) => call.method === 'providers'));
+
+  // --- navigation: 我的歌单 is the landing page, 背景设置 lives elsewhere ----
+  const tabLabels = () => pageRoot.querySelectorAll('.mms-nav-tab').map((tab) => tab.textContent);
+  const clickTab = async (label) => {
+    pageRoot.querySelectorAll('.mms-nav-tab').find((tab) => tab.textContent === label)?.click();
+    await settle(2);
+  };
+  check(
+    'the mod page opens on 我的歌单',
+    tabLabels().join('|') === '我的歌单|搜索|账号' && Boolean(pageRoot.querySelector('.mms-daily')) && !pageRoot.querySelector('.mms-search'),
+    `tabs=${tabLabels().join(',')} daily=${Boolean(pageRoot.querySelector('.mms-daily'))}`,
+  );
+  check(
+    '背景设置 and 每日推荐 are no longer nav tabs',
+    !tabLabels().some((label) => label.includes('背景') || label.includes('每日推荐')),
+    tabLabels().join(','),
+  );
+  check(
+    'the active tab is marked with the native underline idiom',
+    pageRoot.querySelectorAll('.mms-nav-tab')[0]?.classList.contains('is-active')
+      && /\.mms-nav-tab\.is-active:after\{/u.test(injectedCss),
+    `active=${pageRoot.querySelectorAll('.mms-nav-tab')[0]?.className}`,
+  );
+  check(
+    'the 歌单 page shows one sign-in hint and no provider status text',
+    Boolean(pageRoot.querySelector('.mms-login-hint')) && !pageRoot.querySelector('.mms-chip-state'),
+    `hint=${Boolean(pageRoot.querySelector('.mms-login-hint'))} states=${pageRoot.querySelectorAll('.mms-chip-state').length}`,
+  );
+  const goLogin = pageRoot.querySelector('.mms-login-hint')?.querySelector('.mms-primary');
+  check('the sign-in hint offers 去登录', goLogin?.textContent === '去登录', goLogin?.textContent);
+  goLogin?.click();
+  await settle(2);
+  check('去登录 switches to the 账号 tab', Boolean(pageRoot.querySelector('.mms-accounts')), tabLabels().join(','));
+  // The chosen tab is remembered for the rest of the session: re-mounting the page
+  // (ECHO does that on every route change) keeps it.
+  sidebarPage.render(pageRoot, { toast: (message) => toasts.push(message), echo: {}, config: echoExternalMod.config });
+  await settle(2);
+  check('the tab is remembered for the session', Boolean(pageRoot.querySelector('.mms-accounts')), tabLabels().join(','));
+  await clickTab('搜索');
+  check('the 搜索 tab opens the search view', Boolean(pageRoot.querySelector('.mms-search')), tabLabels().join(','));
+  check(
+    'the narrow-window provider dropdown is in the stylesheet',
+    /@media \(max-width:1100px\)\{\.mms-providers\{display:none\}\s*\.mms-providers-select\{display:block/u.test(injectedCss),
+    'media query found',
+  );
 
   // --- error surfacing (regression: { ok:false, error } without `result`) ---
   const failureText = 'Unsupported music platform: nope';
@@ -654,12 +736,11 @@ const run = async () => {
   mainResponses.setSettings = { ok: true, result: {} };
   player.status = async () => { playerStatusCalls += 1; return { state: 'playing', currentTrackId: 'streaming:netease:1' }; };
 
-  const backdropToggle = pageRoot.querySelectorAll('.mms-ghost').find((item) => item.textContent.includes('背景'));
-  check('background toggle present', Boolean(backdropToggle), backdropToggle?.textContent);
-  pageRoot.querySelector('.mms-nav-tab').click();
-  await settle(2);
-  const backdropToggleAfter = pageRoot.querySelectorAll('.mms-ghost').find((item) => item.textContent.includes('背景'));
-  check('background toggle shows enabled state', Boolean(backdropToggleAfter?.textContent.includes('开')), backdropToggleAfter?.textContent);
+  // The MV switch left the search toolbar: it lives on the player bar and on the
+  // 「MV 背景」 page, so the toolbar is search + media type + quality + refresh.
+  const toolbarMv = pageRoot.querySelectorAll('.mms-ghost').find((item) => item.textContent.includes('背景'));
+  check('the search toolbar no longer carries the MV background switch', !toolbarMv, toolbarMv?.textContent || '(none)');
+  check('the toolbar refresh control is icon-only', Boolean(pageRoot.querySelector('.mms-tool-icon')), pageRoot.querySelector('.mms-tool-icon')?.className);
   await waitFor(() => lyricsPage.querySelector(':scope > .mms-lyrics-bg'), 'lyrics background layer');
   check('background layer injected into the lyrics page', Boolean(lyricsPage.querySelector(':scope > .mms-lyrics-bg')));
   const bgIndex = lyricsPage.children.indexOf(lyricsPage.querySelector(':scope > .mms-lyrics-bg'));
@@ -1195,7 +1276,7 @@ const run = async () => {
     }
   }
 
-  // --- daily recommendations + liked songs (NetEase) -----------------------
+  // --- daily recommendations (a group on the 歌单 page now) -----------------
   mainResponses.refreshNeteaseDailyRecommend = {
     ok: true,
     result: {
@@ -1210,19 +1291,28 @@ const run = async () => {
       ],
     },
   };
-  const dailyTab = pageRoot.querySelectorAll('.mms-nav-tab').find((tab) => tab.textContent.includes('每日推荐'));
-  check('daily recommend entry present', Boolean(dailyTab));
-  if (dailyTab) {
-    dailyTab.click();
-    await waitFor(() => pageRoot.allText().includes('日推一号'), 'daily recommend tracks');
-    check(
-      'daily recommend shows the imported tracks',
-      pageRoot.allText().includes('日推一号') && pageRoot.allText().includes('日推二号'),
-      pageRoot.allText().slice(0, 80),
-    );
-  }
+  await clickTab('我的歌单');
+  const dailyGroup = pageRoot.querySelector('.mms-daily');
+  check('每日推荐 is a group on the 歌单 page', Boolean(dailyGroup), pageRoot.allText().slice(0, 60));
+  const dailyOpen = dailyGroup?.querySelectorAll('.mms-primary').find((item) => item.textContent.includes('打开每日推荐'));
+  check('the daily group offers an open action', Boolean(dailyOpen), dailyOpen?.textContent);
+  dailyOpen?.click();
+  await waitFor(() => pageRoot.allText().includes('日推一号'), 'daily recommend tracks');
+  check(
+    'daily recommend shows the imported tracks',
+    pageRoot.allText().includes('日推一号') && pageRoot.allText().includes('日推二号'),
+    pageRoot.allText().slice(0, 80),
+  );
+  // Back on the 歌单 page the group previews the same list it just read.
+  await clickTab('我的歌单');
+  const dailyRows = pageRoot.querySelector('.mms-daily')?.querySelectorAll('.mms-row') || [];
+  check(
+    'the daily group previews the tracks it read',
+    dailyRows.length >= 2,
+    `${dailyRows.length} row(s)`,
+  );
 
-  // --- background settings page (community MV engine) ---------------------
+  // --- MV background page (its own sidebar entry) --------------------------
   mainResponses.mvEngineStatus = {
     ok: true,
     result: {
@@ -1234,13 +1324,23 @@ const run = async () => {
       account: { connected: true, displayName: '测试账号', hasCookie: true },
     },
   };
-  const backgroundTab = pageRoot.querySelectorAll('.mms-nav-tab').find((tab) => tab.textContent.includes('背景设置'));
-  check('background settings tab present', Boolean(backgroundTab));
-  if (backgroundTab) {
-    backgroundTab.click();
-    await waitFor(() => pageRoot.querySelector('.mms-background'), 'background settings view');
-    await waitFor(() => pageRoot.allText().includes('社区 MV 引擎'), 'engine status loaded');
+  const mvPage = sidebarPages.find((page) => page.id === 'multi-music-sources-mv');
+  check('the MV background page is a second sidebar entry', Boolean(mvPage), sidebarPages.map((page) => page.id).join(','));
+  const audioPageRoot = pageRoot;
+  const mvRoot = new Element('div');
+  if (mvPage) {
+    mvPage.render(mvRoot, { toast: (message) => toasts.push(message), echo: {}, config: echoExternalMod.config });
+    pageRoot = mvRoot;
+  }
+  {
+    await waitFor(() => pageRoot.querySelector('.mms-background'), 'MV background page');
+    await waitFor(() => pageRoot.allText().includes('已记住 3 首歌曲'), 'engine status loaded');
     const backgroundText = pageRoot.allText();
+    check(
+      'the MV page carries the master switch',
+      pageRoot.querySelectorAll('.mms-switch').length >= 1 && backgroundText.includes('启用 MV 背景'),
+      `${pageRoot.querySelectorAll('.mms-switch').length} switch(es) · ${backgroundText.slice(0, 60)}`,
+    );
     check(
       'background page reports the community MV engine',
       backgroundText.includes('社区 MV 引擎') && backgroundText.includes('可用'),
@@ -1630,6 +1730,10 @@ const run = async () => {
       );
     }
   }
+
+  // Back to the audio page for the rest of the suite (the MV page keeps its own
+  // root in the real app, so nothing it showed was thrown away here either).
+  pageRoot = audioPageRoot;
 
   check(
     'played tracks are registered with the MV engine',
@@ -2318,10 +2422,74 @@ const run = async () => {
     }
   }
 
+  // --- the transport MV button: lit state + opening the detail page --------
+  // The button reflects the "启用 MV 背景" setting (lit while on, dimmed while off)
+  // and, because the main page shows no MV at all, switching it on there also
+  // navigates to the song detail page (ECHO's lyrics route, driven by a window
+  // CustomEvent — re-dispatching it while already there would toggle back out).
+  const navToggle = transportBar.querySelector('.mms-backdrop-toggle');
+  check(
+    'the transport MV button is lit while the background is enabled',
+    navToggle?.dataset.active === 'true'
+      && navToggle?.classList.contains('is-soft-active')
+      && navToggle?.getAttribute('aria-pressed') === 'true',
+    `active=${navToggle?.dataset.active} soft=${navToggle?.classList.contains('is-soft-active')} pressed=${navToggle?.getAttribute('aria-pressed')}`,
+  );
+
+  // ECHO is showing something other than the song detail page. `lyrics` is not
+  // one of the app's kept-alive routes, so leaving it unmounts `.lyrics-page`.
+  lyricsPage.remove();
+  await settle(2);
+  navEvents.length = 0;
+  navToggle.click();
+  await settle(3);
+  check(
+    'switching the background off stays on the current page',
+    navEvents.length === 0 && navToggle.dataset.active === 'false' && !navToggle.classList.contains('is-soft-active'),
+    `active=${navToggle.dataset.active} events=${navEvents.map((event) => event.type).join(',') || '(none)'}`,
+  );
+  check(
+    'the switched-off button reports the disabled setting',
+    navToggle.getAttribute('aria-pressed') === 'false' && String(navToggle.title).includes('关'),
+    `pressed=${navToggle.getAttribute('aria-pressed')} title=${navToggle.title}`,
+  );
+
+  navEvents.length = 0;
+  navToggle.click();
+  await settle(3);
+  check(
+    'switching the background on from the main page opens the song detail page',
+    navEvents.some((event) => event.type === 'app:navigate:lyrics' && event.detail?.mode === 'lyrics')
+      && navToggle.dataset.active === 'true'
+      && navToggle.classList.contains('is-soft-active'),
+    `events=${navEvents.map((event) => `${event.type}${event.detail?.mode ? `:${event.detail.mode}` : ''}`).join(',') || '(none)'} active=${navToggle.dataset.active}`,
+  );
+
+  // Back on the detail page the button only toggles: dispatching the route event
+  // here would send the user straight back out of the page.
+  documentShim.body.append(lyricsPage);
+  await settle(3);
+  navEvents.length = 0;
+  navToggle.click();
+  await settle(3);
+  check(
+    'the button never navigates away from the song detail page',
+    navEvents.length === 0 && navToggle.dataset.active === 'false',
+    `active=${navToggle.dataset.active} events=${navEvents.map((event) => event.type).join(',') || '(none)'}`,
+  );
+  navEvents.length = 0;
+  navToggle.click();
+  await settle(3);
+  check(
+    'turning the background back on while on the detail page stays there',
+    navEvents.length === 0 && navToggle.dataset.active === 'true',
+    `active=${navToggle.dataset.active} events=${navEvents.map((event) => event.type).join(',') || '(none)'}`,
+  );
+
   // --- cleanup -------------------------------------------------------------
   await cleanup();
   await settle(1);
-  check('cleanup releases sidebar + css', disposedSidebar === 1 && disposedCss === 1, `sidebar=${disposedSidebar} css=${disposedCss}`);
+  check('cleanup releases sidebar + css', disposedSidebar === 2 && disposedCss === 1, `sidebar=${disposedSidebar} css=${disposedCss}`);
 
   console.log(`\n${failures === 0 ? 'all renderer checks passed' : `${failures} renderer check(s) failed`}`);
   // The page may have left intervals running; exit deterministically.

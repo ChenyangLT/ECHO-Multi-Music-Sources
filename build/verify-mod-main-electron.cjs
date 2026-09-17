@@ -142,6 +142,11 @@ const run = async () => {
     `scale=${settings?.mvImmersiveBackgroundScalePercent} threshold=${settings?.mvAutoApplyThreshold} sync=${settings?.mvSyncMode}`,
   );
   check(
+    'the MV background ships switched off (opt-in)',
+    settings?.mvEnabled === false,
+    `mvEnabled=${settings?.mvEnabled}`,
+  );
+  check(
     'background pipeline defaults are name-first + community engine',
     settings?.mvMatchMode === 'first' && settings?.mvSourceMode === 'engine' && settings?.mvDownloaderPath === undefined,
     `match=${settings?.mvMatchMode} source=${settings?.mvSourceMode} downloader=${settings?.mvDownloaderPath}`,
@@ -177,6 +182,30 @@ const run = async () => {
     providerTrackId: '4242',
   });
   check('rememberTrack registers the current track', remembered?.id === 'streaming:netease:4242', JSON.stringify(remembered));
+
+  // The background is opt-in: while `mvEnabled` is off the ported MvService is
+  // inert (it answers with no candidates instead of searching Bilibili), so a
+  // fresh install never goes online for a music video.
+  const offCandidates = await call('mvSearchNetworkCandidatesForSnapshot', {
+    trackId: 'streaming:netease:4242',
+    title: '晴天 周杰伦 MV',
+    artist: '周杰伦',
+    durationSeconds: 269,
+    mediaType: 'streaming',
+  });
+  check(
+    'the MV engine stays inert while the background is off',
+    Array.isArray(offCandidates) && offCandidates.length === 0,
+    `${offCandidates?.length ?? 'n/a'} candidates`,
+  );
+
+  // ... and the switch is what arms it (`mvEnabled` → the engine's `enabled`).
+  const armed = await call('mvSetSettings', { enabled: true });
+  check(
+    'switching the background on arms the MV engine',
+    armed?.settings?.enabled === true && armed?.config?.mvEnabled === true,
+    `enabled=${armed?.settings?.enabled} config=${armed?.config?.mvEnabled}`,
+  );
 
   const engineSettings = await call('mvGetSettings');
   check(

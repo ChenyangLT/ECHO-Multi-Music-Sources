@@ -126,7 +126,9 @@ const mvSettingsFromEngine = (engine) => {
 // community build instead of inventing its own vocabulary. The legacy
 // songBackground* keys are still read by the renderer as fallbacks.
 const MV_DEFAULTS = {
-  mvEnabled: true,
+  // Opt-in: the MV background stays off until the user switches it on (the
+  // player-bar MV button, the mod page toolbar or the config dialog).
+  mvEnabled: false,
   mvEnabledProviders: ['bilibili'],
   mvProviderOrder: ['bilibili'],
   mvAutoSearch: true,

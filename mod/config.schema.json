@@ -64,8 +64,8 @@
     "mvEnabled": {
       "type": "boolean",
       "title": "启用 MV 背景 / Enable the MV background",
-      "description": "播放栏右侧的开关与此同步；点进歌曲详情页（歌词页）就会在歌词后面显示匹配到的 B 站 MV。",
-      "default": true
+      "description": "默认关闭。打开后播放栏右侧的 MV 按钮点亮；点进歌曲详情页（歌词页）就会在歌词后面显示匹配到的 B 站 MV，从主界面点该按钮也会直接进入详情页。",
+      "default": false
     },
     "mvAutoSearch": {
       "type": "boolean",

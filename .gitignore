@@ -15,6 +15,9 @@ dist/
 work/
 build/work/
 
+# Local tooling artefacts (DeepSeek Harness vision router)
+.dsh-vision-router/
+
 # Vendored ECHO Community source: clone https://github.com/Moekotori/ECHO
 # (or point ECHO_MAIN_ROOT at your checkout) before building the bridge.
 ECHO-main/

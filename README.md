@@ -1,11 +1,11 @@
-﻿<div align="center">
+<div align="center">
 
 # ECHO 多平台音源 · ECHO Multi Music Sources
 
 把 **ECHO 社区版（ECHO Community）** 的在线音源移植到 **Steam 版 ECHO** 的
 [**ShinawaseLoader**](https://github.com/ChunchunOwO/ShinawaseLoader) 模组。
 
-[![Version](https://img.shields.io/badge/version-1.16.0-7c5cff?style=flat-square)](https://github.com/ChenyangLT/ECHO-Multi-Music-Sources/releases)
+[![Version](https://img.shields.io/badge/version-1.18.0-7c5cff?style=flat-square)](https://github.com/ChenyangLT/ECHO-Multi-Music-Sources/releases)
 [![License](https://img.shields.io/badge/license-LGPL--3.0-7c5cff?style=flat-square)](LICENSE)
 [![Platform](https://img.shields.io/badge/ECHO-Steam-22c55e?style=flat-square)](https://store.steampowered.com/)
 [![Loader](https://img.shields.io/badge/ShinawaseLoader-1.6.7%2B-0ea5e9?style=flat-square)](https://github.com/ChunchunOwO/ShinawaseLoader)
@@ -46,15 +46,16 @@ Steam 版 ECHO 把第三方音乐平台的能力裁掉了：`app.asar` 里仍然
 
 ## 功能一览
 
+- **页面**：侧栏两条 —— **♫ 多平台音源**（默认打开 **我的歌单**，另有 `搜索` / `账号` 两个标签）和 **🎬 MV 背景**（歌词页视频背景的全部设置）。
 - **搜索 / 播放 / 队列**：四个标签（歌曲 / 专辑 / 艺人 / 歌单）分别检索；`播放全部`、`加入队列`、行内 `▶` `+`、右键菜单（在浏览器打开 / 复制链接）。
 - **音质**：工具栏选择，失败自动降级（哔哩哔哩会依次尝试多档）。
-- **我的歌单（收藏与歌单）**：登录后列出账号内容 —— 网易云 / QQ 音乐的云歌单，以及 **B 站的收藏夹、订阅的收藏夹、稍后再看**。
+- **我的歌单（收藏与歌单）**：打开模组页就是这一页。登录后列出账号内容 —— 网易云 / QQ 音乐的云歌单，以及 **B 站的收藏夹、订阅的收藏夹、稍后再看**；顶部是 **每日推荐** 分组（5 首试听预览 + 一键打开全部）。歌单页本身不显示任何账号信息：没登录时只有一行「去登录」提示。
 - **通过链接导入歌单**：粘贴 **网易云 / QQ 音乐 / 酷狗 / Spotify** 歌单链接，导入即可播放。
 - **保存到本地（由你决定）**：点 `保存到本地` 才会把歌单写进本机；之后打开**不再联网**，平台限流或离线时也能用。账号歌单**列表**自动缓存，歌单**内容**由你选择。
 - **显示方式**：`图标` / `列表` / `紧凑` 三种歌单布局，选择会持久化。
-- **账号**：每个平台粘贴 Cookie，或 `扫码登录`（网易云 / 哔哩哔哩 / QQ 音乐页面内二维码；酷狗 / SoundCloud / osu! 打开登录窗口）。登录后显示头像、昵称、UID、VIP 标记、最后检测时间。
-- **每日推荐**：直接读取网易云账号的每日推荐。
-- **歌曲详情页 MV 背景**：点进歌曲详情页（歌词页）就用「歌名 + 艺人 + MV」在 B 站匹配视频，渲染在歌词后面并**跟随歌曲进度**。
+- **账号**：`账号` 标签里每个平台粘贴 Cookie，或 `扫码登录`（网易云 / 哔哩哔哩 / QQ 音乐页面内二维码；酷狗 / SoundCloud / osu! 打开登录窗口）。登录后显示头像、昵称、UID、VIP 标记、最后检测时间。
+- **每日推荐**：并入「我的歌单」分组，直接读取网易云账号的每日推荐。
+- **歌曲详情页 MV 背景（默认关闭）**：打开后点进歌曲详情页（歌词页）就用「歌名 + 艺人 + MV」在 B 站匹配视频，渲染在歌词后面并**跟随歌曲进度**；播放栏 MV 按钮亮着表示已打开，在主界面点它会直接进入详情页。设置全在侧栏 **MV 背景** 页（歌词页右下角 `⚙ 设置` 是同一套面板）。
 
 ## 安装
 
@@ -72,11 +73,11 @@ Steam 版 ECHO 把第三方音乐平台的能力裁掉了：`app.asar` 里仍然
 ### 2. 安装本模组
 
 1. 到 [**Releases**](https://github.com/ChenyangLT/ECHO-Multi-Music-Sources/releases/latest) 下载
-   **`echo.multi-music-sources-1.16.0.echomod`**（[直链](https://github.com/ChenyangLT/ECHO-Multi-Music-Sources/releases/download/v1.16.0/echo.multi-music-sources-1.16.0.echomod)；
+   **`echo.multi-music-sources-1.18.0.echomod`**（[直链](https://github.com/ChenyangLT/ECHO-Multi-Music-Sources/releases/download/v1.18.0/echo.multi-music-sources-1.18.0.echomod)；
    仓库里的 `dist/` 也放了同一份）；
 2. 把它**拖进 Loader 的 Mods 页面**，或者直接放进 `ECHO/Mods/`（Loader 会自动导入并移到 `Mods/.processed/`）；
 3. 在 Loader 里**启用「ECHO 多平台音源」**；
-4. 重启 ECHO，左侧边栏会出现 **♫ 多平台音源**。
+4. 重启 ECHO，左侧边栏会出现 **♫ 多平台音源** 与 **🎬 MV 背景**。
 
 ### 环境要求
 
@@ -101,8 +102,12 @@ Steam 版 ECHO 把第三方音乐平台的能力裁掉了：`app.asar` 里仍然
 
 ### 我的歌单（收藏与歌单）
 
-登录后进入 **我的歌单**，列出该账号的内容；点封面即载入曲目，可整列表播放或加入队列。
+**打开「多平台音源」就是这一页**（同一次会话内会记住你最后看的标签）。登录后列出该账号的内容；
+顶部是 **每日推荐** 分组（先给 5 首试听，点 `打开每日推荐` 看全部）；点封面即载入曲目，可整列表播放或加入队列。
 **点开歌单只读取，不会自动保存**；从歌单明细点 `← 返回` 回到这一页（不是搜索页）。
+没登录时这一页只有一行提示 + `去登录`，点了直接切到 **账号** 标签 —— 平台登录状态不在这页显示。
+
+平台选择就是顶部那排音源芯片（跟着当前平台走，搜索和歌单共用）；窗口窄到约 1100px 以下时会自动收成一个下拉。
 
 ### 通过链接导入歌单
 
@@ -125,25 +130,29 @@ Steam 版 ECHO 把第三方音乐平台的能力裁掉了：`app.asar` 里仍然
 
 ### 歌曲详情页 MV 背景
 
-**默认开启。** 点进歌曲详情页（歌词页）就会用「歌曲名 + 艺人 + MV」在 B 站搜索并取匹配的视频，
-显示在歌词后面并跟随歌曲播放进度。
+**默认关闭。** 打开后（侧栏 **MV 背景** 页的总开关、播放栏的 **MV 按钮**，或 Loader 配置弹窗里的同一项）
+点进歌曲详情页（歌词页）就会用「歌曲名 + 艺人 + MV」在 B 站搜索并取匹配的视频，显示在歌词后面并跟随歌曲播放进度。
 
+- **MV 背景页**：侧栏 → **🎬 MV 背景**。第一行就是 `启用 MV 背景` 总开关（**背景关着时这一页照样能开**，
+  歌词页的抽屉那时是不存在的），下面依次是状态、匹配方式（按名称取第一个 / 匹配度评分 / 播放量）、
+  候选数量、画面预设、填充方式、缩放与位置、模糊 / 亮度 / 遮罩、同步模式、MV 最高画质等。
+  候选列表带**视频封面**与匹配理由；`当前 MV` 的画质是一个**下拉框**。
+- **播放栏 MV 按钮**：打开时**亮色**、关闭时**暗色**（它表示这颗开关，不表示此刻视频有没有在播）；
+  在**主界面**点它会一边打开开关、一边**自动进入歌曲详情页** —— 也就是唯一显示 MV 的页面。
+  已经在歌曲详情页时点它只切换开关，不会把你顶回上一页。
 - **背景视频怎么来**：和社区版完全一致 —— 社区版 MV 引擎解析出视频流（`echo-mv://stream/…`），
   主进程按社区版 `videoProtocol.ts` 的方式带着该画质的 Referer / UA / Cookie 与渲染进程的 `Range`
   转发 CDN 响应。**不下载、不缓存、不占磁盘。**
 - **背景交互**：在歌词页上**拖动**改画面位置，**Ctrl + 滚轮**缩放。
 - **歌词页右下角面板**：`重新匹配`、`-0.5s` / `+0.5s` / `偏移归零`、`隐藏歌词`、`在浏览器打开`、
-  `关闭背景`，以及 `⚙ 设置` 打开的**右侧完整设置抽屉**（画面预设、尺寸、填充、X-Y-Z、候选视频、
-  自定义链接、同步、画质、引擎状态），可以边看 MV 边调。
-- **背景设置页**：侧栏 → **背景设置**，包含状态、匹配方式（按名称取第一个 / 匹配度评分 / 播放量）、
-  候选数量、画面预设、填充方式、缩放与位置、模糊 / 亮度 / 遮罩、同步模式、MV 最高画质等。
-  候选列表带**视频封面**与匹配理由；`当前 MV` 的画质是一个**下拉框**。
+  `关闭背景`，以及 `⚙ 设置` 打开的**右侧完整设置抽屉**（和 MV 背景页是同一套面板），可以边看 MV 边调。
 - 从 ECHO 自带界面播放的歌曲同样有效：模组会从播放状态里拿到当前曲目并自动登记给 MV 引擎。
 
 ### 账号
 
-`账号` 页面为每个平台粘贴 Cookie，或点 `扫码登录`
+`账号` 标签（模组页右上角）里为每个平台粘贴 Cookie，或点 `扫码登录`
 （网易云、哔哩哔哩、QQ 音乐在页面里直接显示二维码；酷狗 / SoundCloud / osu! 会打开登录窗口）。
+登录后卡片上显示头像、昵称、UID、VIP 标记与最后检测时间。
 账号数据与 ECHO 本体共用 `accounts.json`；模组会读取本体已加密保存的账号，不需要重新登录。
 
 ## 常见问题
@@ -160,7 +169,7 @@ Loader 没在跑，或者模组没启用。让 Loader 常驻并确认 `Mods` 页
 
 **MV 背景画质很低？**
 未登录 B 站时通常只有 360P / 480P；在 `账号` 页登录 B 站后可选到 1080P 以上，
-也可在 `背景设置` 里用 `MV 最高画质` 限制上限。
+也可在侧栏 **MV 背景** 页里用 `MV 最高画质` 限制上限。
 
 **Spotify / TIDAL / Qobuz 用不了？**
 这三个需要 OAuth 登录或自己的开发者凭据。TIDAL 需要在配置里填 Client ID / Secret；
@@ -208,7 +217,7 @@ mod/                        模组包（打包进 .echomod 的内容）
   echo.mod.json             清单
   main.cjs                  主进程入口：RPC、设置、播放解析挂钩、MV 设置转发、
                             echo-mv:// 协议 handler、本地文件回环代理、本地歌单存档
-  mod.js                    渲染进程页面（侧边栏「多平台音源」+「背景设置」）
+  mod.js                    渲染进程页面（侧边栏「多平台音源」+「MV 背景」）
                             + 歌词页背景层 + 播放栏开关 + 状态提示条
   config.json / schema      默认配置与配置项 schema（mv* 键与社区版一致）
   config-ui.js              配置弹窗
@@ -245,15 +254,18 @@ handlers, so `window.echo.streaming` is `null`. This mod runs the community plat
 playback to ECHO's real player through ShinawaseLoader's player runtime.
 
 **Requirements** — Windows, ECHO **Steam**, [ShinawaseLoader](https://github.com/ChunchunOwO/ShinawaseLoader) **1.6.7+**
-(tested with 1.7.2). Install the loader first, then grab `echo.multi-music-sources-1.16.0.echomod` from
+(tested with 1.7.2). Install the loader first, then grab `echo.multi-music-sources-1.18.0.echomod` from
 [**Releases**](https://github.com/ChenyangLT/ECHO-Multi-Music-Sources/releases/latest) and drop it into the
 loader's Mods page (or into `ECHO/Mods/`), enable it, and restart the game. Always launch through
 `ECHO.modded.exe`, never the stock `ECHO.exe`.
 
 **Highlights** — 9 platforms (NetEase, QQ Music, KuGou, Bilibili, YouTube, SoundCloud, Spotify, TIDAL, Qobuz);
-an account **playlists / favourites** page with **link import** and **opt-in local saving** (so a saved
-playlist opens offline); three list layouts; QR sign-in; daily recommendations; and a
-**Bilibili MV background** on the song page that follows the music (streamed, never downloaded).
+two sidebar pages (**♫ Multi Music Sources** — opening on **My playlists**, with `Search` / `Accounts` tabs — and
+**🎬 MV background**); an account **playlists / favourites** page with **link import** and **opt-in local saving**
+(so a saved playlist opens offline); a **Daily picks** group on the playlists page; three list layouts; QR sign-in;
+and an opt-in **Bilibili MV background** on the song page that follows the music (streamed, never downloaded) —
+the transport-bar **MV button** lights up while it is enabled and, pressed on any other page, takes you straight to
+the song detail page.
 
 **License** — `LGPL-3.0-only`. The streaming and MV algorithms are derived from
 [ECHO Community](https://github.com/Moekotori/ECHO) (LGPL-3.0-only); the mod loader, playback bridge and
