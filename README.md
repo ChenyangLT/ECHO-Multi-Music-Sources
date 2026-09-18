@@ -17,9 +17,6 @@
 
 ## 这是什么
 
-Steam 版 ECHO 把第三方音乐平台的能力裁掉了：`app.asar` 里仍然留着 `streaming:*` 的 IPC 通道名和账号存储，
-但主进程不注册这些 handler，preload 里 `window.echo.streaming` 与 `window.echo.accounts` 都是 `null`。
-
 本模组把 **ECHO 社区版那套平台算法**搬进模组自己的主进程，让 Steam 版重新拥有这些音源：
 搜索、专辑、艺人、歌单、歌词、MV 与在线播放，全部走社区版的实现
 （`ECHO-main/src/main/streaming`），播放则通过 [ShinawaseLoader](https://github.com/ChunchunOwO/ShinawaseLoader)
