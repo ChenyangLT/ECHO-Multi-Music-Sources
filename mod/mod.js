@@ -259,6 +259,9 @@ const STRINGS = {
     panelHide: '隐藏歌词',
     panelShow: '显示歌词',
     panelDisable: '关闭背景',
+    backdropVisible: '正在显示 MV',
+    backdropPressToReload: '（点击重新匹配）',
+    backdropRematched: (reason) => (reason === 'button' ? '已重新匹配当前歌曲的 MV' : '已按当前歌曲重新匹配 MV'),
     settingsButton: '歌词页显示「⚙ 设置」按钮',
     settingsButtonHint: '关掉后歌曲详情页的 MV 面板不再带这个按钮；侧栏「MV 背景」页和播放栏的 MV 按钮不受影响。',
     trackCount: (n) => `${n} 首`,
@@ -505,6 +508,9 @@ const STRINGS = {
     panelHide: 'Hide lyrics',
     panelShow: 'Show lyrics',
     panelDisable: 'Turn background off',
+    backdropVisible: 'MV on screen',
+    backdropPressToReload: ' (press to match again)',
+    backdropRematched: (reason) => (reason === 'button' ? 'MV matched again for this song' : 'MV matched again for the current song'),
     settingsButton: 'Show the ⚙ settings button on the song page',
     settingsButtonHint: 'While off, the MV panel on the song detail page has no ⚙ button. The sidebar MV background page and the player-bar MV button are unaffected.',
     trackCount: (n) => `${n} tracks`,
@@ -1872,6 +1878,11 @@ const backdrop = {
   noticeTimer: null,
   // The matched video, for the panel and the settings page.
   matched: null,
+  // Which track the video currently in the layer was matched FOR (a stable
+  // signature, not just the player's track id). A video whose owner no longer
+  // matches the playing track is stale and has to be re-matched — that is what
+  // made the previous song's MV keep playing after a track change.
+  matchedFor: null,
   // Tracks this session played, so the current track can be identified from the
   // player's status without re-reading ECHO's queue shape.
   known: new Map(),
@@ -1907,6 +1918,7 @@ const backdrop = {
  */
 const resetBackdropMatch = () => {
   backdrop.trackId = null;
+  backdrop.matchedFor = null;
   backdrop.ready = false;
   backdrop.source = null;
   backdrop.retry = null;
@@ -2451,9 +2463,16 @@ const renderBackdropPanelBody = (force = false) => {
   const row = h('div', 'mms-mv-panel-actions');
   row.append(
     button('mms-ghost', copy.panelRematch, () => {
-      backdrop.trackId = null;
-      reportNotice(copy.panelRematch);
-      void pollBackdrop();
+      // Same correction the transport button runs: drop the current video,
+      // match this track again and seek it onto the audio.
+      void rematchCurrentTrack('panel').then((ok) => {
+        if (!ok) {
+          backdrop.trackId = null;
+          backdrop.matchedFor = null;
+          reportNotice(copy.panelRematch);
+          void pollBackdrop();
+        }
+      });
     }),
     button('mms-ghost', copy.panelOffsetMinus, () => void nudgeBackdropOffset(-500)),
     button('mms-ghost', copy.panelOffsetPlus, () => void nudgeBackdropOffset(500)),
@@ -2658,6 +2677,9 @@ const setBackdropMessage = (state, message, reason = null) => {
   if (backdrop.node) backdrop.node.dataset.state = state;
   if (state !== 'playing') setHideLyricsFlag(false);
   updateBackdropStatus();
+  // The transport button reports whether an MV is on screen, so every state the
+  // match goes through has to reach it (searching → loading → playing/failed).
+  syncPlayerToggle();
 };
 
 const stopBackdrop = (state = 'idle') => {
@@ -2675,6 +2697,7 @@ const stopBackdrop = (state = 'idle') => {
   backdrop.candidate = null;
   backdrop.ready = false;
   backdrop.trackId = null;
+  backdrop.matchedFor = null;
   backdrop.source = null;
   backdrop.retry = null;
   backdrop.escalate = null;
@@ -2961,6 +2984,46 @@ const runBackdropSteps = async (steps, track, token) => {
   return false;
 };
 
+/**
+ * The identity a matched video belongs to: the player's track id plus the title
+ * and artist the match was made from.
+ *
+ * The id alone is not enough. ECHO's queue can hand the same id to a different
+ * item, a re-queued item keeps its id, and the status can arrive before the new
+ * track's metadata — and in all of those cases the layer would keep the previous
+ * song's video, which is exactly the "switching songs does not re-match" bug.
+ */
+const trackSignature = (track, id) => [
+  String(id ?? track?.stableKey ?? track?.id ?? ''),
+  String(track?.title || '').trim(),
+  String(track?.artist || '').trim(),
+].join('\u0001');
+
+/** Stops and unloads the video currently in the layer (keeps the layer itself). */
+const dropBackdropVideo = () => {
+  const video = backdrop.video;
+  if (video) {
+    try {
+      video.pause();
+      video.removeAttribute('src');
+      video.load();
+    } catch {
+      /* ignore */
+    }
+  }
+  backdrop.ready = false;
+  backdrop.source = null;
+  backdrop.retry = null;
+  backdrop.escalate = null;
+  backdrop.offsetMs = 0;
+  backdrop.startedAt = 0;
+  backdrop.stalls = 0;
+  if (backdrop.node) {
+    backdrop.node.dataset.source = 'none';
+    backdrop.node.dataset.playing = 'false';
+  }
+};
+
 const loadBackdropFor = async (track) => {
   const settings = backgroundConfig();
   const token = ++backdrop.lookupToken;
@@ -2971,6 +3034,10 @@ const loadBackdropFor = async (track) => {
   backdrop.escalate = null;
   backdrop.offsetMs = 0;
   backdrop.lastError = null;
+  // The match that is starting belongs to this track from here on, so the video
+  // left in the layer is dropped: it is the previous song's until this one
+  // replaces it, and leaving it playing is what the automatic correction fixes.
+  dropBackdropVideo();
   const query = backdropQueryFor(track);
   setBackdropMessage('searching', `${copy.backdropSearchingFor(query)}`);
 
@@ -3046,22 +3113,35 @@ const loadBackdropFor = async (track) => {
  * had nothing to work with (a click looked like it did nothing). The player
  * status carries the full track object, so it is used as the fallback and the
  * track is registered with the MV engine on the spot.
+ *
+ * The registry is keyed by the player's track id, and that id is NOT unique over
+ * a session: a queue that reuses ids, a re-queued item or a rebuilt queue hands
+ * the same id to a different song. Returning the remembered entry blindly kept
+ * the previous song's title (and so its MV) alive for the new one, which is the
+ * "switching songs does not re-match" bug: the remembered track is only used
+ * when it still describes what the status says is playing.
  */
 const currentTrackFromStatus = (status) => {
   const id = status?.currentTrackId ?? status?.trackId ?? null;
   if (!id) return null;
+  const fresh = status?.currentTrack ?? status?.currentItem?.track ?? null;
   const known = backdrop.known.get(String(id));
-  if (known) return known;
+  if (known) {
+    const sameSong = !fresh
+      || ((!fresh.title || fresh.title === known.title) && (!fresh.artist || fresh.artist === known.artist));
+    if (sameSong) return known;
+    // The id was reused by a different song: fall through and re-register the
+    // track the status describes, so the match is made for what is playing now.
+  }
 
-  const track = status?.currentTrack ?? status?.currentItem?.track ?? null;
-  if (!track || (!track.title && !track.id)) return null;
+  if (!fresh || (!fresh.title && !fresh.id)) return null;
   // The status id is authoritative for keying, so the registry and the engine
   // look the track up under exactly the id the player reports.
   const candidate = {
-    ...track,
-    id: track.id ?? String(id),
+    ...fresh,
+    id: fresh.id ?? String(id),
     stableKey: String(id),
-    mediaType: track.mediaType ?? 'streaming',
+    mediaType: fresh.mediaType ?? 'streaming',
   };
   rememberTrack(candidate);
   return candidate;
@@ -3095,6 +3175,38 @@ const statusPositionSeconds = (status) => {
     if (Number.isFinite(millis)) return Math.max(0, millis / 1000);
   }
   return null;
+};
+
+/**
+ * Corrects the layer when it comes back on screen: the video there has to belong
+ * to the track that is playing, and it has to be at the song's position.
+ *
+ * `pollBackdrop` re-matches a stale video, but only once its status round-trip
+ * has answered — by then the previous song's MV has already been visible. This
+ * runs first on (re-)entering the page and drops the layer's video without
+ * waiting when the identity it was matched for is not the one playing.
+ */
+const verifyBackdropTrack = async () => {
+  if (!backdropEnabled() || !lyricsPage()) return;
+  const player = playerApi();
+  if (!player?.status) return;
+  const status = await player.status().catch(() => null);
+  const id = status?.currentTrackId ?? status?.trackId ?? null;
+  if (!id) return;
+  const track = currentTrackFromStatus(status);
+  if (!track) return;
+  const signature = trackSignature(track, id);
+  const sameTrack = String(id) === String(backdrop.trackId) && backdrop.matchedFor === signature;
+  if (!sameTrack) {
+    // Stale (or the id matches but the video was matched for another song).
+    backdrop.trackId = null;
+    backdrop.matchedFor = null;
+    dropBackdropVideo();
+    return;
+  }
+  // Right song: line the video up with the audio instead of resuming where the
+  // user left the page.
+  await alignBackdropToAudio({ force: true });
 };
 
 /** Aligns the background video with the audio position (ECHO-main's drift model). */
@@ -3195,10 +3307,18 @@ const alignBackdropToAudio = async ({ force = false, restart = false } = {}) => 
 };
 
 const pollBackdrop = async () => {
-  if (!backdropEnabled()) return;
+  if (!backdropEnabled()) {
+    syncPlayerToggle();
+    return;
+  }
   // The background only exists on the lyrics page; without it there is nothing
-  // to inject into, so the search is deferred until the page is opened.
-  if (!lyricsPage()) return;
+  // to inject into, so the search is deferred until the page is opened. The
+  // transport button still has to go dim here — "an MV is on screen" is false as
+  // soon as the page is gone.
+  if (!lyricsPage()) {
+    syncPlayerToggle();
+    return;
+  }
   ensureBackdrop();
   ensureBackdropStatus();
   ensureBackdropPanel();
@@ -3287,13 +3407,25 @@ const pollBackdrop = async () => {
   // the lyrics page under us and take the <video> (and its URL) with it, which
   // used to leave the track id set and the background permanently blank.
   const hasSource = Boolean(backdrop.video?.src);
-  if (track && (settings.autoSearch || settings.autoPreload) && (String(id) !== backdrop.trackId || !hasSource)) {
+  // The video in the layer must belong to the track that is playing NOW. The
+  // player's id can survive a track change (a queue that reuses ids, a re-queued
+  // item, a status that lands late), so the signature the video was matched for
+  // is compared as well: anything else means the layer is showing the previous
+  // song's MV and has to be re-matched.
+  const signature = trackSignature(track, id);
+  const stale = backdrop.matchedFor !== null && backdrop.matchedFor !== signature;
+  if (track && (settings.autoSearch || settings.autoPreload)
+      && (String(id) !== backdrop.trackId || !hasSource || stale)) {
     if (backdrop.loading) return;
+    // A track change drops the previous video before the new match starts, so
+    // the old MV cannot keep playing underneath the new song.
+    if (stale) dropBackdropVideo();
     backdrop.trackId = String(id);
     backdrop.loading = true;
     try {
       const loaded = await loadBackdropFor(track);
       backdrop.trackId = loaded ? String(id) : null;
+      if (loaded) backdrop.matchedFor = signature;
     } finally {
       backdrop.loading = false;
     }
@@ -3303,6 +3435,9 @@ const pollBackdrop = async () => {
   if (backdrop.state === 'playing') {
     await alignBackdropToAudio({ force: !settings.followProgress });
   }
+  // The button's light follows what is on screen, so it is re-read once per tick
+  // as well (a stream can start or die without a status change).
+  syncPlayerToggle();
 };
 
 /**
@@ -3438,6 +3573,7 @@ const persistBackgroundSettings = async (patch, options = {}) => {
   if (options.reload) {
     // Matching/source changes must take effect for the current track too.
     backdrop.trackId = null;
+    backdrop.matchedFor = null;
     void pollBackdrop();
   }
   if (options.render !== false) renderSoon();
@@ -3629,20 +3765,110 @@ const enterSongDetailPage = () => {
 };
 
 /**
- * The transport switch is lit while the MV background is switched ON and dimmed
- * while it is off, so the button reports the setting rather than the playback
- * moment: whether a video happens to be playing is already visible on screen.
+ * Whether an MV is on screen right now: the layer is attached to the song detail
+ * page, it owns a stream and its <video> is really there.
+ *
+ * This is the button's lit condition (and what "there is an MV to watch" means
+ * everywhere else). A match that is still resolving, a track with no match, or a
+ * page the user has left are all "no MV", so the button stays dim.
+ */
+const backdropOnScreen = () => {
+  const node = backdrop.node;
+  const page = lyricsPage();
+  // `isConnected` alone is not enough: ECHO keeps the detached lyrics page (and
+  // our layer inside it) in memory when the route changes, so the page itself has
+  // to be part of the document before its MV counts as on screen.
+  if (!node?.isConnected || !page || !document.body.contains(page)) return false;
+  const video = backdrop.video;
+  if (!video?.isConnected) return false;
+  if (node.dataset.source !== 'ready' && !video.src) return false;
+  return true;
+};
+
+/**
+ * Runs the match again for the track that is playing now and re-aligns the video
+ * with it.
+ *
+ * This is the automatic correction the panel and the transport button trigger:
+ * the previous video is dropped first (a live cross-fade, not a fresh layer),
+ * the match is re-resolved for the current track and the result is seeked onto
+ * the audio position — so a video left over from the previous song can never keep
+ * playing under the new one.
+ */
+const rematchCurrentTrack = async (reason = '') => {
+  if (!backdropEnabled()) return false;
+  if (!lyricsPage()) return false;
+  ensureBackdrop();
+  const token = ++backdrop.lookupToken;
+  // Drop the stale video, but keep the layer: this avoids a visible rebuild.
+  backdrop.trackId = null;
+  backdrop.matchedFor = null;
+  backdrop.ready = false;
+  backdrop.source = null;
+  backdrop.retry = null;
+  backdrop.escalate = null;
+  backdrop.candidate = null;
+  backdrop.lastError = null;
+  backdrop.stalls = 0;
+  if (backdrop.video) {
+    try {
+      backdrop.video.pause();
+      backdrop.video.removeAttribute('src');
+      backdrop.video.load();
+    } catch {
+      /* ignore */
+    }
+  }
+  if (backdrop.node) {
+    backdrop.node.dataset.source = 'none';
+    backdrop.node.dataset.playing = 'false';
+  }
+  backdrop.lookupToken = token;
+  const player = playerApi();
+  if (!player?.status) return false;
+  const status = await player.status().catch(() => null);
+  if (token !== backdrop.lookupToken) return false;
+  const id = status?.currentTrackId ?? status?.trackId ?? null;
+  const track = id ? currentTrackFromStatus(status) : null;
+  if (!track) return false;
+  const loaded = await loadBackdropFor(track);
+  if (token !== backdrop.lookupToken) return false;
+  backdrop.trackId = loaded ? String(id) : null;
+  if (loaded) {
+    // The audio has moved on while the video was being resolved; line them up.
+    await alignBackdropToAudio({ force: true });
+    reportNotice(copy.backdropRematched(reason));
+  }
+  renderBackdropPanelBody(true);
+  syncPlayerToggle();
+  return loaded;
+};
+
+/**
+ * The transport switch.
+ *
+ * Lit (accent colour + the transport's own dot, and lit only) while the song
+ * detail page is showing an MV that is really on screen. Anywhere else — another
+ * page, a match still resolving, a track without a match — it stays dim.
+ *
+ * A press follows the light: while lit it switches the MV background off, while
+ * dim it brings the MV up. On the song detail page that means a re-match plus a
+ * seek (no navigation, which would throw the user off the page); anywhere else it
+ * switches the background on, walks to the page and matches right away.
  */
 const syncPlayerToggle = () => {
   const bar = transportBar();
   if (!bar) return;
-  const active = backdropEnabled();
-  const title = `${copy.backdrop} · ${active ? copy.backdropOn : copy.backdropOff}`;
+  const onScreen = backdropOnScreen();
+  const enabled = backdropEnabled();
+  const title = onScreen
+    ? `${copy.backdrop} · ${copy.backdropVisible}`
+    : `${copy.backdrop} · ${enabled ? copy.backdropOn : copy.backdropOff}${lyricsPage() && enabled ? copy.backdropPressToReload : ''}`;
   const existing = bar.querySelector(`.${PLAYER_TOGGLE_CLASS}`);
   if (existing) {
-    existing.dataset.active = String(active);
-    existing.classList.toggle('is-soft-active', active);
-    existing.setAttribute('aria-pressed', String(active));
+    existing.dataset.active = String(onScreen);
+    existing.classList.toggle('is-soft-active', onScreen);
+    existing.setAttribute('aria-pressed', String(onScreen));
     existing.title = title;
     existing.setAttribute('aria-label', title);
     return;
@@ -3651,18 +3877,28 @@ const syncPlayerToggle = () => {
   const toggle = h('button', `icon-button transport-media-button ${PLAYER_TOGGLE_CLASS}`);
   toggle.type = 'button';
   toggle.dataset.workshopIcon = 'transport-mms-background';
-  toggle.dataset.active = String(active);
-  toggle.classList.toggle('is-soft-active', active);
+  toggle.dataset.active = String(onScreen);
+  toggle.classList.toggle('is-soft-active', onScreen);
   toggle.title = title;
   toggle.setAttribute('aria-label', title);
-  toggle.setAttribute('aria-pressed', String(active));
+  toggle.setAttribute('aria-pressed', String(onScreen));
   toggle.innerHTML = BACKDROP_ICON;
   toggle.addEventListener('click', () => {
-    const next = !backdropEnabled();
-    void setBackdropEnabled(next);
-    // Switching the background on from the main page takes the user to the song
-    // detail page, where the MV they just enabled is actually visible.
-    if (next) enterSongDetailPage();
+    if (backdropOnScreen()) {
+      // Lit → the MV is on screen, so this press takes it away.
+      void setBackdropEnabled(false);
+      return;
+    }
+    if (lyricsPage()) {
+      // Dim on the detail page → re-match the current track and seek it.
+      if (!backdropEnabled()) void setBackdropEnabled(true);
+      void rematchCurrentTrack('button');
+      return;
+    }
+    // Dim elsewhere → bring the MV up and go where it is visible.
+    if (!backdropEnabled()) void setBackdropEnabled(true);
+    enterSongDetailPage();
+    void pollBackdrop();
   });
   // ECHO renders the lyrics button last; the toggle sits next to it.
   const lyricsButton = bar.querySelector('.transport-lyrics-button');
@@ -5787,14 +6023,18 @@ html[data-theme="dark"] .mms-lyrics-bg::after{opacity:max(var(--mms-immersive-ov
 /* mvHideLyrics — hides the lyric column while the MV background is playing. */
 html[data-mms-hide-lyrics="true"] .lyrics-page .lyrics-scroll{display:none}
 html[data-mms-hide-lyrics="true"] .lyrics-page .lyrics-left-panel::after{content:"♪";position:absolute;inset:0;display:grid;place-items:center;font-size:64px;color:rgba(255,255,255,.2);pointer-events:none}
-.mms-backdrop-toggle{display:inline-flex!important;align-items:center;justify-content:center}
-/* The transport MV button reports the "启用 MV 背景" setting, not the playback
-   moment: on = lit (accent colour + the transport underline ECHO draws from
-   .is-soft-active / aria-pressed), off = dimmed. The repeated class and
-   !important are needed to outrank ECHO's own .transport-media-button colour
-   rule, which is itself !important. */
+.mms-backdrop-toggle{position:relative;display:inline-flex!important;align-items:center;justify-content:center}
+/* The transport MV button is lit (accent colour + a filled dot + the transport
+   underline ECHO draws from .is-soft-active / aria-pressed) ONLY while the song
+   detail page is showing an MV that is really on screen. Everywhere else — another
+   page, a match still resolving, a track without a match — it is dimmed, so the
+   light means "there is an MV to watch" and a dim press means "bring it up". The
+   repeated class and !important are needed to outrank ECHO's own
+   .transport-media-button colour rule, which is itself !important. */
 html .player-bar .transport .mms-backdrop-toggle.mms-backdrop-toggle[data-active="false"]{color:color-mix(in srgb,var(--theme-muted-text,#64748b) 74%,transparent)!important;opacity:.66}
 html .player-bar .transport .mms-backdrop-toggle.mms-backdrop-toggle[data-active="true"]{color:var(--theme-accent-text-strong,var(--theme-accent-solid-bg,#4b55e8))!important;opacity:1}
+.mms-backdrop-toggle:after{position:absolute;top:3px;right:3px;width:5px;height:5px;border-radius:50%;background:currentColor;content:"";opacity:0;transition:opacity .18s ease}
+html .player-bar .transport .mms-backdrop-toggle.mms-backdrop-toggle[data-active="true"]:after{opacity:1}
 /* Status pill for the background match/resolution. It sits next to the
    video layer (the layer itself is transparent until it plays). */
 .mms-backdrop-status{position:absolute;left:50%;bottom:18px;transform:translateX(-50%);z-index:22;display:none;flex-direction:column;gap:6px;min-width:220px;max-width:min(520px,70%);padding:9px 14px;border:1px solid var(--theme-panel-border,#d8dee9);border-radius:12px;background:rgba(12,16,22,.78);color:#eef4fc;font:12px/1.4 -apple-system,system-ui,"Segoe UI",sans-serif;pointer-events:none;backdrop-filter:blur(6px)}
@@ -5961,7 +6201,17 @@ const installBackdropObserver = () => {
     // starts the match right away instead of waiting for the next timer tick.
     const entered = !backdrop.pageVisible || backdrop.generation !== generation;
     backdrop.pageVisible = true;
-    if (entered) void pollBackdrop();
+    if (entered) {
+      void pollBackdrop();
+      // …and re-align the video that came with the page with the audio that is
+      // playing now: entering the page must never show the previous song's MV
+      // from wherever it happened to stop.
+      const id = backdrop.trackId;
+      if (backdropEnabled() && id && backdrop.video?.src) {
+        void verifyBackdropTrack();
+      }
+    }
+    syncPlayerToggle();
   };
   refresh();
   // A window resize changes the auto-scale ratio and the room the player bar

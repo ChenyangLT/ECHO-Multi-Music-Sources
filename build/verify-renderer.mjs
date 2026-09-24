@@ -159,6 +159,14 @@ class Element {
     this.parentNode = null;
   }
 
+  /** True when `node` is this element or one of its descendants. */
+  contains(node) {
+    for (let current = node; current; current = current.parentNode) {
+      if (current === this) return true;
+    }
+    return false;
+  }
+
   setAttribute(name, value) { this.attributes[name] = String(value); }
   getAttribute(name) { return this.attributes[name] ?? null; }
 
@@ -2648,69 +2656,74 @@ const run = async () => {
     }
   }
 
-  // --- the transport MV button: lit state + opening the detail page --------
-  // The button reflects the "启用 MV 背景" setting (lit while on, dimmed while off)
-  // and, because the main page shows no MV at all, switching it on there also
-  // navigates to the song detail page (ECHO's lyrics route, driven by a window
-  // CustomEvent — re-dispatching it while already there would toggle back out).
-  const navToggle = transportBar.querySelector('.mms-backdrop-toggle');
+  // --- the transport MV button: a light for "an MV is on screen" -----------
+  // The button is lit ONLY while the song detail page is really showing an MV
+  // (accent colour + the dot + aria-pressed). A match that is still resolving, a
+  // track without a match and any other page keep it dim, and a press follows the
+  // light: lit → background off, dim on the detail page → match again and seek,
+  // dim elsewhere → background on + walk to the page.
+  // The player bar is re-rendered by ECHO as playback state changes, so the test
+  // always looks the button up again instead of holding on to a detached node.
+  const mvButton = () => transportBar.querySelector('.mms-backdrop-toggle');
+  const navToggle = mvButton();
   check(
-    'the transport MV button is lit while the background is enabled',
+    'the transport MV button is lit while its MV is on screen',
     navToggle?.dataset.active === 'true'
       && navToggle?.classList.contains('is-soft-active')
-      && navToggle?.getAttribute('aria-pressed') === 'true',
+      && navToggle?.getAttribute('aria-pressed') === 'true'
+      && /\.mms-backdrop-toggle:after\{/u.test(injectedCss),
     `active=${navToggle?.dataset.active} soft=${navToggle?.classList.contains('is-soft-active')} pressed=${navToggle?.getAttribute('aria-pressed')}`,
   );
 
   // ECHO is showing something other than the song detail page. `lyrics` is not
-  // one of the app's kept-alive routes, so leaving it unmounts `.lyrics-page`.
+  // one of the app's kept-alive routes, so leaving it unmounts `.lyrics-page` —
+  // and the button must go dim with it, even though the setting is still on.
   lyricsPage.remove();
-  await settle(2);
-  navEvents.length = 0;
-  navToggle.click();
-  await settle(3);
+  // The page is unmounted under ECHO's own container, so the mutation observer on
+  // <body> never sees it: the supervisor tick is what brings the button down.
+  await waitFor(() => mvButton()?.dataset.active === 'false', 'button dimmed after leaving the page', 8000);
   check(
-    'switching the background off stays on the current page',
-    navEvents.length === 0 && navToggle.dataset.active === 'false' && !navToggle.classList.contains('is-soft-active'),
-    `active=${navToggle.dataset.active} events=${navEvents.map((event) => event.type).join(',') || '(none)'}`,
-  );
-  check(
-    'the switched-off button reports the disabled setting',
-    navToggle.getAttribute('aria-pressed') === 'false' && String(navToggle.title).includes('关'),
-    `pressed=${navToggle.getAttribute('aria-pressed')} title=${navToggle.title}`,
+    'leaving the detail page dims the button (the MV is no longer on screen)',
+    mvButton()?.dataset.active === 'false' && !mvButton()?.classList.contains('is-soft-active'),
+    `active=${mvButton()?.dataset.active}`,
   );
 
+  // A dim press elsewhere brings the MV up and walks to the page where it shows.
   navEvents.length = 0;
-  navToggle.click();
+  mvButton()?.click();
   await settle(3);
   check(
-    'switching the background on from the main page opens the song detail page',
-    navEvents.some((event) => event.type === 'app:navigate:lyrics' && event.detail?.mode === 'lyrics')
-      && navToggle.dataset.active === 'true'
-      && navToggle.classList.contains('is-soft-active'),
-    `events=${navEvents.map((event) => `${event.type}${event.detail?.mode ? `:${event.detail.mode}` : ''}`).join(',') || '(none)'} active=${navToggle.dataset.active}`,
+    'a dim press on the main page opens the song detail page',
+    navEvents.some((event) => event.type === 'app:navigate:lyrics' && event.detail?.mode === 'lyrics'),
+    `events=${navEvents.map((event) => event.type).join(',') || '(none)'}`,
   );
 
-  // Back on the detail page the button only toggles: dispatching the route event
-  // here would send the user straight back out of the page.
+  // Back on the detail page, a lit press takes the MV away without navigating.
   documentShim.body.append(lyricsPage);
-  await settle(3);
+  await waitFor(() => lyricsPage.querySelector('.mms-backdrop-video')?.src, 'MV back on the page', 8000);
+  await waitFor(() => mvButton()?.dataset.active === 'true', 'button lit with the MV back');
   navEvents.length = 0;
-  navToggle.click();
+  mvButton()?.click();
   await settle(3);
   check(
-    'the button never navigates away from the song detail page',
-    navEvents.length === 0 && navToggle.dataset.active === 'false',
-    `active=${navToggle.dataset.active} events=${navEvents.map((event) => event.type).join(',') || '(none)'}`,
+    'a lit press turns the background off and stays on the page',
+    navEvents.length === 0 && mvButton()?.dataset.active === 'false' && !mvButton()?.classList.contains('is-soft-active'),
+    `active=${mvButton()?.dataset.active} events=${navEvents.map((event) => event.type).join(',') || '(none)'}`,
   );
+
+  // Dim while on the detail page: the press re-matches and re-seeks instead of
+  // navigating away (this is the "the MV is wrong / not showing" repair path).
+  const matchesBefore = () => calls.filter((call) => call.method === 'findMvCandidates').length;
+  const beforePress = matchesBefore();
   navEvents.length = 0;
-  navToggle.click();
-  await settle(3);
+  mvButton()?.click();
+  await settle(4);
   check(
-    'turning the background back on while on the detail page stays there',
-    navEvents.length === 0 && navToggle.dataset.active === 'true',
-    `active=${navToggle.dataset.active} events=${navEvents.map((event) => event.type).join(',') || '(none)'}`,
+    'a dim press on the detail page re-matches without leaving the page',
+    navEvents.length === 0 && matchesBefore() > beforePress,
+    `events=${navEvents.length} matches=${matchesBefore() - beforePress}`,
   );
+  await waitFor(() => mvButton()?.dataset.active === 'true', 'button lit again after the repair');
 
   // --- the lyrics-page panel and its settings drawer (2.0) -----------------
   // The picture keys are put back to the shipped state first, because the boot
@@ -2881,6 +2894,69 @@ const run = async () => {
         && mvLayer.dataset.fit === 'cover'
         && Number.parseFloat(mvLayer.style.getPropertyValue('--mms-immersive-scale')) === 1,
       `fitWidth=${mvLayer.dataset.fitWidth} fit=${mvLayer.dataset.fit} scale=${mvLayer.style.getPropertyValue('--mms-immersive-scale')}`,
+    );
+  }
+
+  // --- automatic correction: a track change re-matches and re-seeks ---------
+  // The reported bug: with an MV playing, leaving the song page (without stopping
+  // playback or the MV switch) and then playing another song left the PREVIOUS
+  // song's MV on screen. The player's id is not enough to trust — a queue that
+  // reuses ids, a re-queued item or a late status all keep it — so the match is
+  // keyed on the track's identity and re-run whenever it changes.
+  {
+    const layer = lyricsPage.querySelector('.mms-lyrics-bg');
+    const video = lyricsPage.querySelector('.mms-backdrop-video');
+    const matchesBefore = calls.filter((call) => call.method === 'findMvCandidates').length;
+    const oldSrc = String(video?.src || '');
+    // The same player id, a different song: exactly what the report describes.
+    player.status = async () => ({
+      state: 'playing',
+      currentTrackId: 'streaming:netease:1',
+      positionSeconds: 95,
+      durationSeconds: 260,
+      currentTrack: { id: 'streaming:netease:1', stableKey: 'streaming:netease:1', mediaType: 'streaming', provider: 'netease', providerTrackId: '1', title: '下一首歌', artist: '另一个艺人', duration: 260 },
+    });
+    mainResponses.findMvCandidates = {
+      ok: true,
+      result: [{ id: 'BVNEXT', title: '下一首歌 MV', uploader: 'UP', url: 'https://www.bilibili.com/video/BVNEXT', duration: 260, viewCount: 1000, score: 0.9 }],
+    };
+    // The engine answers with the NEXT song's video, so the layer really has to
+    // swap: the same URL would prove nothing.
+    mainResponses.mvSelectVideo = {
+      ok: true,
+      result: {
+        id: 'video-next',
+        sourceId: 'BVNEXT',
+        title: '下一首歌 MV',
+        provider: 'bilibili',
+        providerUrl: 'https://www.bilibili.com/video/BVNEXT',
+        mediaUrl: 'echo-mv://stream/video-next/bilibili-qn-64',
+        qualityLabel: '720P',
+        durationSeconds: 260,
+        offsetMs: 0,
+        playableInApp: true,
+      },
+    };
+    mainResponses.prepareMvProgressive = { ok: true, result: { url: 'http://127.0.0.1:9/next-progressive.mp4', qualityLabel: '720P', durationSeconds: 260, sizeBytes: 1, mimeType: 'video/mp4', mode: 'progressive' } };
+    await waitFor(() => calls.filter((call) => call.method === 'findMvCandidates').length > matchesBefore, 're-match after the track change', 12_000);
+    const rematch = calls.filter((call) => call.method === 'findMvCandidates').pop();
+    check(
+      'a track change re-matches for the song that is playing now',
+      rematch?.payload?.title === '下一首歌' && rematch?.payload?.artist === '另一个艺人',
+      `title=${rematch?.payload?.title} artist=${rematch?.payload?.artist}`,
+    );
+    await waitFor(() => String(lyricsPage.querySelector('.mms-backdrop-video')?.src || '') !== oldSrc
+      && String(lyricsPage.querySelector('.mms-backdrop-video')?.src || '').length > 0, 'new video loaded', 12_000);
+    const newSrc = String(lyricsPage.querySelector('.mms-backdrop-video')?.src || '');
+    check(
+      'the previous song\'s video is dropped and replaced',
+      newSrc.length > 0 && newSrc !== oldSrc && newSrc.includes('video-next'),
+      `src=${newSrc.slice(-40)}`,
+    );
+    check(
+      'the layer is showing a stream again (for the new track)',
+      layer?.dataset.source === 'ready' && layer?.dataset.playing === 'true',
+      `source=${layer?.dataset.source} playing=${layer?.dataset.playing}`,
     );
   }
 

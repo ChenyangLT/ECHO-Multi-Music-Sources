@@ -4,7 +4,7 @@
 
 一个音乐播放器**插件**：把 9 个在线音乐平台接进播放器，搜索、播放、歌单、歌词、MV 背景全在一个侧栏页面里。
 
-[![Version](https://img.shields.io/badge/version-2.0.1-7c5cff?style=flat-square)](https://github.com/ChenyangLT/ECHO-Multi-Music-Sources/releases)
+[![Version](https://img.shields.io/badge/version-2.0.2-7c5cff?style=flat-square)](https://github.com/ChenyangLT/ECHO-Multi-Music-Sources/releases)
 [![License](https://img.shields.io/badge/license-LGPL--3.0-7c5cff?style=flat-square)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%20%2F%2011%20x64-22c55e?style=flat-square)]()
 
@@ -24,6 +24,8 @@
 - **MV 背景**（默认关闭）：在歌曲详情页用歌曲名匹配在线 MV，作为歌词页背景并跟随歌曲进度播放；不下载、不缓存、不占磁盘。
 - **MV 设置面板**：固定在歌词页左下角，点标题栏展开或收起；面板上的 `⚙ 设置` 从右侧打开完整设置抽屉。
   这个 `⚙` 按钮可以在画面设置里关掉（`歌词页显示「⚙ 设置」按钮`），关掉后侧栏 `🎬 MV 背景` 页和播放栏的 MV 按钮照旧。
+- **自动纠正**：切歌、进入歌曲详情页、点播放栏 MV 按钮都会**重新匹配并对齐到当前播放进度**，所以换歌之后画面不会停在上一首的 MV 上。
+- **播放栏 MV 按钮**：**有 MV 在屏幕上时才亮**（亮色 + 点）。亮着点它就是关掉 MV 背景；暗着点它——在歌曲详情页上是重新匹配这首歌（不会离开页面），在别的页面上是打开 MV 背景并进入歌曲详情页。
 - **配置会记忆**：画面预设、填充、缩放、位置、同步模式、画质等任何改动都会写进你的配置，**对所有 MV 生效，重启后依然保留**。默认画面是「**默认（左右贴合）**」——画面缩放到左右两侧恰好贴住窗口宽度并随窗口自适应，高度不做限制。
 
 ## 支持情况
@@ -45,7 +47,7 @@
 ## 安装
 
 1. 到 [**Releases**](https://github.com/ChenyangLT/ECHO-Multi-Music-Sources/releases/latest) 下载
-   **`echo.multi-music-sources-2.0.1.echomod`**；
+   **`echo.multi-music-sources-2.0.2.echomod`**；
 2. 把它拖进模组加载器的 Mods 页面，或直接放进加载器的 `Mods/` 目录；
 3. 在加载器里**启用「ECHO 多平台音源」**，然后重启软件；
 4. 左侧边栏会出现 **♫ 多平台音源** 与 **🎬 MV 背景** 两个页面。
@@ -135,13 +137,16 @@ opt-in **MV background** on the song page that follows the music (streamed, neve
 
 The MV panel is pinned to the bottom-left of the song page; its `⚙ settings` button opens the full
 settings drawer from the right edge, and that button can be switched off from the picture settings.
-Every setting — picture preset, fitting, zoom, position, sync mode, quality — is **remembered per
-user**, applies to every MV and survives a restart. The default picture is **“Default (fits left &
-right)”**: the picture is scaled to exactly the width of the window and follows resizing, with the
-height left free.
+Switching songs, entering the song page and pressing the transport MV button all **re-match the video
+and seek it to the current position**, so the previous song's MV never lingers. The transport MV
+button is **lit only while an MV is on screen** (lit: press turns the MV off; dim: on the song page it
+re-matches this song, elsewhere it brings the MV up and opens the song page). Every setting — picture
+preset, fitting, zoom, position, sync mode, quality — is **remembered per user**, applies to every MV
+and survives a restart. The default picture is **“Default (fits left & right)”**: the picture is
+scaled to exactly the width of the window and follows resizing, with the height left free.
 
 **Requirements** — Windows 10/11 x64 and [ShinawaseLoader](https://github.com/ChunchunOwO/ShinawaseLoader)
-1.6.7+ (tested with 1.7.2). Grab `echo.multi-music-sources-2.0.1.echomod` from
+1.6.7+ (tested with 1.7.2). Grab `echo.multi-music-sources-2.0.2.echomod` from
 [**Releases**](https://github.com/ChenyangLT/ECHO-Multi-Music-Sources/releases/latest), drop it into
 the loader's Mods page, enable it and restart.
 
