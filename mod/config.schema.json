@@ -248,60 +248,11 @@
       "enum": ["engine", "progressive"],
       "default": "engine"
     },
-    "mvPanelDockEdge": {
-      "type": "string",
-      "title": "MV 面板贴边 / MV panel edge",
-      "description": "歌词页 MV 面板停在左侧还是右侧（拖动面板标题栏即可改变，位置会被记住）。",
-      "enum": ["left", "right"],
-      "default": "left"
-    },
-    "mvPanelDockAlign": {
-      "type": "string",
-      "title": "MV 面板上下 / MV panel vertical",
-      "enum": ["top", "bottom"],
-      "default": "bottom"
-    },
-    "mvPanelDockOffset": {
-      "type": "integer",
-      "title": "MV 面板水平内缩 / MV panel horizontal inset",
-      "description": "面板距所贴那一侧的内缩像素值，0 表示紧贴边缘。",
-      "minimum": 0,
-      "maximum": 4000,
-      "default": 16
-    },
-    "mvPanelDockCross": {
-      "type": "integer",
-      "title": "MV 面板垂直内缩 / MV panel vertical inset",
-      "minimum": 0,
-      "maximum": 4000,
-      "default": 18
-    },
-    "mvDrawerDockEdge": {
-      "type": "string",
-      "title": "设置抽屉贴边 / Settings drawer edge",
-      "description": "歌词页 MV 背景设置抽屉停在左侧还是右侧（拖动抽屉标题栏即可改变，位置会被记住）。",
-      "enum": ["left", "right"],
-      "default": "right"
-    },
-    "mvDrawerDockAlign": {
-      "type": "string",
-      "title": "设置抽屉上下 / Settings drawer vertical",
-      "enum": ["top", "bottom"],
-      "default": "top"
-    },
-    "mvDrawerDockOffset": {
-      "type": "integer",
-      "title": "设置抽屉水平内缩 / Settings drawer horizontal inset",
-      "minimum": 0,
-      "maximum": 4000,
-      "default": 0
-    },
-    "mvDrawerDockCross": {
-      "type": "integer",
-      "title": "设置抽屉垂直内缩 / Settings drawer vertical inset",
-      "minimum": 0,
-      "maximum": 4000,
-      "default": 8
+    "mvShowSettingsButton": {
+      "type": "boolean",
+      "title": "歌词页显示「⚙ 设置」按钮 / Show the ⚙ settings button on the song page",
+      "description": "关掉后，歌曲详情页左下角的 MV 面板不再带这个按钮；侧栏「MV 背景」页和播放栏的 MV 按钮不受影响。",
+      "default": true
     },
     "tidalClientId": {
       "type": "string",

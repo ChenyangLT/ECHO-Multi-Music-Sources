@@ -4,7 +4,7 @@
 
 一个音乐播放器**插件**：把 9 个在线音乐平台接进播放器，搜索、播放、歌单、歌词、MV 背景全在一个侧栏页面里。
 
-[![Version](https://img.shields.io/badge/version-2.0.0-7c5cff?style=flat-square)](https://github.com/ChenyangLT/ECHO-Multi-Music-Sources/releases)
+[![Version](https://img.shields.io/badge/version-2.0.1-7c5cff?style=flat-square)](https://github.com/ChenyangLT/ECHO-Multi-Music-Sources/releases)
 [![License](https://img.shields.io/badge/license-LGPL--3.0-7c5cff?style=flat-square)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%20%2F%2011%20x64-22c55e?style=flat-square)]()
 
@@ -22,7 +22,8 @@
 - **账号**：每个平台粘贴 Cookie 或扫码登录，登录后可播放更高音质与会员曲目。
 - **音质选择**：可选音质，失败自动降级。
 - **MV 背景**（默认关闭）：在歌曲详情页用歌曲名匹配在线 MV，作为歌词页背景并跟随歌曲进度播放；不下载、不缓存、不占磁盘。
-- **MV 设置面板与设置抽屉**：都能用标题栏**拖动**，默认停在左下角 / 右上角，松手自动吸附到最近的边，位置会被记住。
+- **MV 设置面板**：固定在歌词页左下角，点标题栏展开或收起；面板上的 `⚙ 设置` 从右侧打开完整设置抽屉。
+  这个 `⚙` 按钮可以在画面设置里关掉（`歌词页显示「⚙ 设置」按钮`），关掉后侧栏 `🎬 MV 背景` 页和播放栏的 MV 按钮照旧。
 - **配置会记忆**：画面预设、填充、缩放、位置、同步模式、画质等任何改动都会写进你的配置，**对所有 MV 生效，重启后依然保留**。默认画面是「**默认（左右贴合）**」——画面缩放到左右两侧恰好贴住窗口宽度并随窗口自适应，高度不做限制。
 
 ## 支持情况
@@ -44,7 +45,7 @@
 ## 安装
 
 1. 到 [**Releases**](https://github.com/ChenyangLT/ECHO-Multi-Music-Sources/releases/latest) 下载
-   **`echo.multi-music-sources-2.0.0.echomod`**；
+   **`echo.multi-music-sources-2.0.1.echomod`**；
 2. 把它拖进模组加载器的 Mods 页面，或直接放进加载器的 `Mods/` 目录；
 3. 在加载器里**启用「ECHO 多平台音源」**，然后重启软件；
 4. 左侧边栏会出现 **♫ 多平台音源** 与 **🎬 MV 背景** 两个页面。
@@ -65,15 +66,15 @@
 - **导入歌单**：在顶部输入框粘贴歌单链接（网易云 / QQ 音乐 / 酷狗 / Spotify）后点 `导入`；点 `保存到本地` 可离线使用。
 - **账号**：`账号` 标签里粘贴 Cookie，或点 `扫码登录`。
 - **MV 背景**：在侧栏 `🎬 MV 背景` 页打开总开关，或在播放栏点 MV 按钮（在主界面点它会直接进入歌曲详情页）。
-  进入歌曲详情页后，MV 会显示在歌词后面并跟随歌曲进度；`⚙ 设置` 打开完整设置面板。
-  面板和设置面板都能**拖动标题栏移动**，靠近边缘会自动吸附，位置会被记住。
+  进入歌曲详情页后，MV 会显示在歌词后面并跟随歌曲进度。左下角的 MV 面板固定在那个位置，点标题栏展开或收起；
+  `⚙ 设置` 从右侧打开完整设置面板，这个按钮也能在画面设置里关掉。
 - **画面调整**：在歌词页上拖动背景改位置，`Ctrl + 滚轮` 缩放。
 
 ## 设置保存在哪里
 
 | 内容 | 位置 |
 | --- | --- |
-| 插件设置（画面预设、MV、面板位置等） | 插件自己的配置存储，随软件重启保留 |
+| 插件设置（画面预设、MV、⚙ 按钮开关等） | 插件自己的配置存储，随软件重启保留 |
 | 你保存的歌单 | 随软件数据目录下的 `echo-mms-playlists.json` |
 | 平台账号 | 随软件数据目录下的加密账号存储 |
 
@@ -132,15 +133,15 @@ TIDAL, Qobuz); search, queue and streaming playback with per-platform quality; a
 **playlists / favourites** page with **link import** and opt-in local saving; QR sign-in; and an
 opt-in **MV background** on the song page that follows the music (streamed, never downloaded).
 
-Both the MV panel and its settings drawer can be **dragged by their header**, start at the
-bottom-left / top-right, snap to the nearest edge and **remember where you left them**. Every
-setting — picture preset, fitting, zoom, position, sync mode, quality — is **remembered per user**,
-applies to every MV and survives a restart. The default picture is **“Default (fits left & right)”**:
-the picture is scaled to exactly the width of the window and follows resizing, with the height left
-free.
+The MV panel is pinned to the bottom-left of the song page; its `⚙ settings` button opens the full
+settings drawer from the right edge, and that button can be switched off from the picture settings.
+Every setting — picture preset, fitting, zoom, position, sync mode, quality — is **remembered per
+user**, applies to every MV and survives a restart. The default picture is **“Default (fits left &
+right)”**: the picture is scaled to exactly the width of the window and follows resizing, with the
+height left free.
 
 **Requirements** — Windows 10/11 x64 and [ShinawaseLoader](https://github.com/ChunchunOwO/ShinawaseLoader)
-1.6.7+ (tested with 1.7.2). Grab `echo.multi-music-sources-2.0.0.echomod` from
+1.6.7+ (tested with 1.7.2). Grab `echo.multi-music-sources-2.0.1.echomod` from
 [**Releases**](https://github.com/ChenyangLT/ECHO-Multi-Music-Sources/releases/latest), drop it into
 the loader's Mods page, enable it and restart.
 

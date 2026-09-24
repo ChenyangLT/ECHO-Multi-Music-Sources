@@ -259,7 +259,8 @@ const STRINGS = {
     panelHide: '隐藏歌词',
     panelShow: '显示歌词',
     panelDisable: '关闭背景',
-    panelDragHint: '拖动标题栏移动面板；靠近边缘会自动吸附，位置会被记住',
+    settingsButton: '歌词页显示「⚙ 设置」按钮',
+    settingsButtonHint: '关掉后歌曲详情页的 MV 面板不再带这个按钮；侧栏「MV 背景」页和播放栏的 MV 按钮不受影响。',
     trackCount: (n) => `${n} 首`,
     accountUid: (id) => `UID ${id}`,
     playFailed: '播放失败',
@@ -504,7 +505,8 @@ const STRINGS = {
     panelHide: 'Hide lyrics',
     panelShow: 'Show lyrics',
     panelDisable: 'Turn background off',
-    panelDragHint: 'Drag the header to move the panel; it snaps to the nearest edge and the spot is remembered',
+    settingsButton: 'Show the ⚙ settings button on the song page',
+    settingsButtonHint: 'While off, the MV panel on the song detail page has no ⚙ button. The sidebar MV background page and the player-bar MV button are unaffected.',
     trackCount: (n) => `${n} tracks`,
     playFailed: 'Playback failed',
     noProviders: 'No music platform is available. Check the log for bridge load errors.',
@@ -1754,6 +1756,9 @@ const backgroundConfig = () => {
     replayOnChange: config.mvReplayAudioOnChange !== false,
     hideLyrics: config.mvHideLyrics === true,
     readability: config.mvLyricsReadabilityEnhanced === true,
+    // Whether the song detail page offers its ⚙ 设置 button (the one that opens
+    // the full MV settings drawer). On by default.
+    showSettingsButton: config.mvShowSettingsButton !== false,
     // How many search results the automatic match considers and the candidate
     // list in the settings page shows.
     candidateLimit: Math.round(clampNumber(config.mvCandidateLimit, 2, 20, 8)),
@@ -2180,294 +2185,9 @@ const escalateShortBackdropSource = () => {
 // Where the lyrics-page MV panel and its settings drawer live
 // ---------------------------------------------------------------------------
 //
-// Both float over the song detail page and both can be dragged by their header.
-// Once dropped, they snap to the nearest edge and the spot is remembered per
-// user, so the panel opens where it was left instead of jumping back to a corner
-// — it starts at the bottom-left.
-//
-// Placement is kept as a corner (`dock` + `align`) plus an inset from that
-// corner's two edges. An inset of 0 *is* the edge, so a resize only has to clamp
-// the insets rather than guess at a percentage: a panel left at the bottom-left
-// stays there at any window size. The four values are stored as plain config
-// keys so they travel through the host's settings store unchanged.
-
-const PANEL_DOCK_EDGES = ['left', 'right'];
-const PANEL_DOCK_VERTICALS = ['top', 'bottom'];
-// How close to an edge the panel has to be dropped to snap onto it.
-const PANEL_SNAP_PX = 26;
-// A little breathing room so a docked panel never touches the window frame.
-const PANEL_DOCK_MARGIN_PX = 16;
-
-/**
- * The two floaters and the config keys their placement lives in.
- *
- * The action panel ships at the bottom-left and the full settings drawer at the
- * top-right (where it has always opened).
- */
-const PANEL_DOCKS = {
-  panel: {
-    edge: 'mvPanelDockEdge',
-    align: 'mvPanelDockAlign',
-    offset: 'mvPanelDockOffset',
-    cross: 'mvPanelDockCross',
-    defaults: { dock: 'left', align: 'bottom', offset: 16, cross: 18 },
-  },
-  drawer: {
-    edge: 'mvDrawerDockEdge',
-    align: 'mvDrawerDockAlign',
-    offset: 'mvDrawerDockOffset',
-    cross: 'mvDrawerDockCross',
-    defaults: { dock: 'right', align: 'top', offset: 0, cross: 8 },
-  },
-};
-
-const panelDockSpecFor = (element) => (element === backdrop.drawer ? PANEL_DOCKS.drawer : PANEL_DOCKS.panel);
-
-const readPanelDock = (spec) => {
-  const fallback = spec.defaults;
-  const dock = PANEL_DOCK_EDGES.includes(config[spec.edge]) ? config[spec.edge] : fallback.dock;
-  const align = PANEL_DOCK_VERTICALS.includes(config[spec.align]) ? config[spec.align] : fallback.align;
-  const size = (value, fallbackValue) => {
-    const parsed = Number(value);
-    if (!Number.isFinite(parsed)) return fallbackValue;
-    return Math.max(0, Math.min(4000, Math.round(parsed)));
-  };
-  return {
-    dock,
-    align,
-    offset: size(config[spec.offset], fallback.offset),
-    cross: size(config[spec.cross], fallback.cross),
-  };
-};
-
-/** The node the dock coordinates are measured against (the lyrics page). */
-const panelDockArea = (element) => {
-  const page = element?.parentNode;
-  if (page && typeof page.getBoundingClientRect === 'function') return page;
-  return document.body;
-};
-
-/**
- * The box of an element / its page in pixels.
- *
- * Both fall back to the window size, and a box with no layout yet reports zero —
- * a closed drawer is off-screen, so measuring it must never shrink a remembered
- * inset to nothing.
- */
-const measureBox = (node) => {
-  const rect = typeof node?.getBoundingClientRect === 'function' ? node.getBoundingClientRect() : null;
-  return { width: Number(rect?.width) || 0, height: Number(rect?.height) || 0, left: Number(rect?.left) || 0, top: Number(rect?.top) || 0 };
-};
-
-const measurePage = (element) => {
-  const box = measureBox(panelDockArea(element));
-  return { width: box.width || Number(window.innerWidth) || 0, height: box.height || Number(window.innerHeight) || 0 };
-};
-
-/** The largest inset that still keeps the element inside the page. */
-const clampPanelInset = (element, position) => {
-  const page = measurePage(element);
-  const box = measureBox(element);
-  const maxOffset = Math.max(0, page.width - box.width - PANEL_DOCK_MARGIN_PX);
-  const maxCross = Math.max(0, page.height - box.height - PANEL_DOCK_MARGIN_PX);
-  return {
-    dock: position.dock,
-    align: position.align,
-    // An element with no layout yet (hidden drawer) keeps its stored inset.
-    offset: box.width > 0 ? Math.max(0, Math.min(position.offset, maxOffset)) : position.offset,
-    cross: box.height > 0 ? Math.max(0, Math.min(position.cross, maxCross)) : position.cross,
-  };
-};
-
-/**
- * Writes a dock position onto the element.
- *
- * All four edges are always written as pixels (the pair the position does not use
- * is derived from the element's own box) so the stylesheet never has to fall back
- * to `auto` and a measured offset can be compared with the stored one directly.
- */
-const writePanelDock = (element, position) => {
-  if (!element?.style?.setProperty) return;
-  const box = measureBox(element);
-  const page = measurePage(element);
-  const pageWidth = page.width;
-  const pageHeight = page.height;
-  const width = box.width;
-  const height = box.height;
-
-  const left = position.dock === 'left' ? position.offset : pageWidth - width - position.offset;
-  const top = position.align === 'top' ? position.cross : pageHeight - height - position.cross;
-
-  element.dataset.dock = position.dock;
-  element.dataset.align = position.align;
-  element.style.setProperty('--mms-panel-dock-left', `${Math.round(left)}px`);
-  element.style.setProperty('--mms-panel-dock-right', `${Math.round(pageWidth - width - left)}px`);
-  element.style.setProperty('--mms-panel-dock-top', `${Math.round(top)}px`);
-  element.style.setProperty('--mms-panel-dock-bottom', `${Math.round(pageHeight - height - top)}px`);
-};
-
-/** Places an element where the user last left it (or at its default corner). */
-const applyPanelDock = (element) => {
-  if (!element?.isConnected) return;
-  writePanelDock(element, clampPanelInset(element, readPanelDock(panelDockSpecFor(element))));
-};
-
-const applyPanelDocks = () => {
-  applyPanelDock(backdrop.panel);
-  applyPanelDock(backdrop.drawer);
-};
-
-/** The store payload for a position (kept as flat keys, see PANEL_DOCKS). */
-const panelDockPatch = (spec, position) => ({
-  [spec.edge]: position.dock,
-  [spec.align]: position.align,
-  [spec.offset]: Math.max(0, Math.round(position.offset)),
-  [spec.cross]: Math.max(0, Math.round(position.cross)),
-});
-
-/** The corner the element is closest to, used on drop so it snaps to an edge. */
-const nearestPanelDock = (element) => {
-  const page = panelDockArea(element);
-  const bounds = typeof page?.getBoundingClientRect === 'function' ? page.getBoundingClientRect() : null;
-  const box = element.getBoundingClientRect();
-  const width = Number(bounds?.width) || Number(window.innerWidth);
-  const height = Number(bounds?.height) || Number(window.innerHeight);
-  const originX = Number(bounds?.left) || 0;
-  const originY = Number(bounds?.top) || 0;
-  const left = (Number(box.left) || 0) - originX;
-  const top = (Number(box.top) || 0) - originY;
-  const dock = left + box.width / 2 < width / 2 ? 'left' : 'right';
-  const align = top + box.height / 2 < height / 2 ? 'top' : 'bottom';
-  // How far the element's own edge sits from each side of the page.
-  const offset = dock === 'left' ? left : width - (left + box.width);
-  const cross = align === 'top' ? top : height - (top + box.height);
-  return { dock, align, offset: Math.max(0, Math.round(offset)), cross: Math.max(0, Math.round(cross)) };
-};
-
-/**
- * Makes a panel header a drag handle: move it anywhere, and on release snap it
- * to the nearest edge (a corner) and remember where it ended up.
- *
- * The body keeps its own behaviour — the panel's header already toggles it and
- * the drawer's controls keep working — so only the header starts a drag, and a
- * pointer that moved is treated as a drag rather than a click.
- */
-const attachPanelDrag = (element, handle) => {
-  if (element.dataset.dragReady === 'true') return;
-  element.dataset.dragReady = 'true';
-
-  let drag = null;
-  const pageRectOf = () => {
-    const page = panelDockArea(element);
-    const bounds = typeof page?.getBoundingClientRect === 'function' ? page.getBoundingClientRect() : null;
-    return {
-      left: Number(bounds?.left) || 0,
-      top: Number(bounds?.top) || 0,
-      width: Number(bounds?.width) || Number(window.innerWidth),
-      height: Number(bounds?.height) || Number(window.innerHeight),
-    };
-  };
-
-  const move = (event) => {
-    if (!drag) return;
-    const page = pageRectOf();
-    const box = element.getBoundingClientRect();
-    const left = Math.max(0, Math.min(page.width - box.width, event.clientX - drag.grabX));
-    const top = Math.max(0, Math.min(page.height - box.height, event.clientY - drag.grabY));
-    // The element is moved by writing its four edges, which is exactly what the
-    // remembered dock position is: no transform, so it never fights the drawer's
-    // slide-in transition.
-    element.style.setProperty('--mms-panel-dock-left', `${Math.round(left)}px`);
-    element.style.setProperty('--mms-panel-dock-right', `${Math.round(page.width - box.width - left)}px`);
-    element.style.setProperty('--mms-panel-dock-top', `${Math.round(top)}px`);
-    element.style.setProperty('--mms-panel-dock-bottom', `${Math.round(page.height - box.height - top)}px`);
-    if (!drag.moved && Math.abs(event.clientX - drag.startX) + Math.abs(event.clientY - drag.startY) > 3) {
-      drag.moved = true;
-      element.dataset.dragging = 'true';
-    }
-    event.preventDefault();
-  };
-
-  const stopListening = () => {
-    try {
-      window.removeEventListener('pointermove', move);
-      window.removeEventListener('pointerup', finish);
-      window.removeEventListener('pointercancel', cancel);
-    } catch {
-      /* ignore */
-    }
-  };
-
-  const finish = (event) => {
-    if (!drag) return;
-    const moved = drag.moved;
-    drag = null;
-    stopListening();
-    element.dataset.dragging = 'false';
-    if (!moved) {
-      // A plain click on the header: leave the placement alone.
-      applyPanelDock(element);
-      return;
-    }
-    const dropped = nearestPanelDock(element);
-    // Within the snap distance of an edge → sit exactly on it. Otherwise keep the
-    // free position, expressed against the corner it is nearest to.
-    const snapped = {
-      dock: dropped.dock,
-      align: dropped.align,
-      offset: dropped.offset <= PANEL_SNAP_PX ? 0 : dropped.offset,
-      cross: dropped.cross <= PANEL_SNAP_PX ? 0 : dropped.cross,
-    };
-    writePanelDock(element, snapped);
-    // Re-read the placed insets so the remembered value is the visible one.
-    const page = panelDockArea(element);
-    const bounds = typeof page?.getBoundingClientRect === 'function' ? page.getBoundingClientRect() : null;
-    const box = element.getBoundingClientRect();
-    const width = Number(bounds?.width) || Number(window.innerWidth);
-    const height = Number(bounds?.height) || Number(window.innerHeight);
-    const left = (Number(box.left) || 0) - (Number(bounds?.left) || 0);
-    const top = (Number(box.top) || 0) - (Number(bounds?.top) || 0);
-    const stored = {
-      dock: snapped.dock,
-      align: snapped.align,
-      offset: Math.max(0, Math.round(snapped.dock === 'left' ? left : width - (left + box.width))),
-      cross: Math.max(0, Math.round(snapped.align === 'top' ? top : height - (top + box.height))),
-    };
-    void persistBackgroundSettings(panelDockPatch(panelDockSpecFor(element), stored));
-    event?.preventDefault?.();
-  };
-
-  const cancel = () => {
-    if (!drag) return;
-    drag = null;
-    stopListening();
-    element.dataset.dragging = 'false';
-    applyPanelDock(element);
-  };
-
-  handle.addEventListener('pointerdown', (event) => {
-    if (event.button !== 0) return;
-    // Buttons inside the header keep their own click behaviour.
-    const tag = String(event.target?.tagName || '').toUpperCase();
-    if (tag === 'BUTTON' || tag === 'INPUT' || tag === 'SELECT') return;
-    const box = element.getBoundingClientRect();
-    drag = {
-      startX: event.clientX,
-      startY: event.clientY,
-      grabX: event.clientX - box.left,
-      grabY: event.clientY - box.top,
-      moved: false,
-    };
-    window.addEventListener('pointermove', move);
-    window.addEventListener('pointerup', finish);
-    window.addEventListener('pointercancel', cancel);
-  });
-
-  // The first paint has no size to measure yet, so place the element once it has
-  // been laid out as well.
-  if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => applyPanelDock(element));
-};
-
+// Neither floats freely: the panel sits at the bottom-left of the song detail
+// page and the settings drawer opens from the right edge. Both are positioned by
+// the stylesheet, so there is nothing to remember and no drag to keep in step.
 
 const ensureBackdropPanel = () => {
   const page = lyricsPage();
@@ -2493,11 +2213,12 @@ const ensureBackdropPanel = () => {
     event?.stopPropagation?.();
     toggleOpen();
   });
-  // A visible grip says the header can be dragged; the header is the handle.
-  const grip = h('span', 'mms-panel-grip');
-  grip.title = copy.panelDragHint;
-  grip.setAttribute('aria-hidden', 'true');
-  head.append(grip, title, h('span', 'mms-mv-panel-head-actions', '') , settings, toggle);
+  // The ⚙ button is the detail page's own way into the settings, so it can be
+  // switched off in the settings (mvShowSettingsButton).
+  const setRow = backgroundConfig().showSettingsButton
+    ? [settings]
+    : [];
+  head.append(title, h('span', 'mms-mv-panel-head-actions', '') , ...setRow, toggle);
   head.addEventListener('click', () => toggleOpen());
   const body = h('div', 'mms-mv-panel-body');
   panel.append(head, body);
@@ -2506,9 +2227,6 @@ const ensureBackdropPanel = () => {
   if (anchor?.nextSibling) page.insertBefore(panel, anchor.nextSibling);
   else page.append(panel);
   backdrop.panel = panel;
-  // Bottom-left by default, and wherever the user last dropped it after that.
-  attachPanelDrag(panel, head);
-  applyPanelDock(panel);
   renderBackdropPanelBody();
   return panel;
 };
@@ -2548,9 +2266,8 @@ const syncDrawerTop = () => {
 
 /**
  * The settings drawer: the same content as the sidebar's 「背景设置」 page, so
- * everything can be adjusted without leaving the song detail page. It opens on
- * the right, is dragged by its own header like the panel, snaps to the nearest
- * edge and remembers where it was left.
+ * everything can be adjusted without leaving the song detail page. Opening it
+ * slides it in from the right edge of the page.
  */
 const ensureBackdropDrawer = () => {
   const page = lyricsPage();
@@ -2563,11 +2280,7 @@ const ensureBackdropDrawer = () => {
   const drawer = h('aside', DRAWER_CLASS);
   drawer.dataset.open = 'false';
   const head = h('div', 'mms-mv-drawer-head');
-  const grip = h('span', 'mms-panel-grip');
-  grip.title = copy.panelDragHint;
-  grip.setAttribute('aria-hidden', 'true');
   head.append(
-    grip,
     h('strong', 'mms-mv-drawer-title', copy.drawerTitle),
     button('mms-mv-panel-action', copy.drawerClose, () => closeBackdropDrawer()),
   );
@@ -2576,8 +2289,6 @@ const ensureBackdropDrawer = () => {
   page.append(drawer);
   backdrop.drawer = drawer;
   syncDrawerTop();
-  attachPanelDrag(drawer, head);
-  applyPanelDock(drawer);
   return drawer;
 };
 
@@ -2592,9 +2303,6 @@ const openBackdropDrawer = () => {
   drawer.dataset.open = 'true';
   renderBackdropDrawerBody();
   bodyClicked(drawer);
-  // The placement is measured once the drawer is actually laid out (a closed
-  // drawer is off-screen and has no usable box).
-  applyPanelDock(drawer);
 };
 
 const closeBackdropDrawer = () => {
@@ -3654,6 +3362,15 @@ const persistBackgroundSettings = async (patch, options = {}) => {
 
   applyBackdropStyle();
   syncBackdropLoop();
+  // The ⚙ button is part of the panel's markup, so a change to it rebuilds the
+  // panel rather than only its body (its open/closed state is kept).
+  if (patch && 'mvShowSettingsButton' in patch) {
+    const wasOpen = backdrop.panel?.dataset.open === 'true';
+    backdrop.panel?.remove();
+    backdrop.panel = null;
+    const rebuilt = lyricsPage() ? ensureBackdropPanel() : null;
+    if (rebuilt && wasOpen) rebuilt.dataset.open = 'true';
+  }
   // The lyrics-page drawer shows the same settings, so it is rebuilt on the next
   // poll tick (not immediately, which would interrupt a slider drag).
   if (backdrop.drawer?.dataset.open === 'true') backdrop.drawerDirty = true;
@@ -5305,6 +5022,9 @@ const renderBackgroundSettings = ({ masterSwitch = false } = {}) => {
   pictureSection.append(bgRow(copy.overlay, bgSlider('mvImmersiveBackgroundOverlayOpacityPercent', 0, 100, 1, '%')));
   pictureSection.append(bgRow(copy.readability, bgToggle('mvLyricsReadabilityEnhanced', true)));
   pictureSection.append(bgRow(copy.hideLyrics, bgToggle('mvHideLyrics', true)));
+  // The detail page's own way into this panel; off means the panel keeps only the
+  // title, the collapse arrow and its actions.
+  pictureSection.append(bgRow(copy.settingsButton, bgToggle('mvShowSettingsButton'), copy.settingsButtonHint));
   wrap.append(pictureSection);
 
   // ---- sync --------------------------------------------------------------
@@ -6064,18 +5784,11 @@ html .player-bar .transport .mms-backdrop-toggle.mms-backdrop-toggle[data-active
 .mms-bg-offset .mms-search-input{flex:1 1 220px;min-width:0;max-width:none}
 .mms-bg-offset-value{min-width:4.2em;text-align:center;font-variant-numeric:tabular-nums;color:var(--theme-muted-text,#64748b);font-size:11px}
 /* Lyrics-page MV panel: the actions ECHO-main's MvPanel exposes, on the lyrics page.
-   It starts at the bottom-left and is moved by dragging its header; the four
-   --mms-panel-dock-* values are written by applyPanelDock()/the drag handler, so
-   the panel can sit against any edge (and away from one) without a transform —
-   transforms are reserved for the drawer's slide-in. The whole header toggles the
-   body and the ⚙ opens the full settings drawer. */
-.mms-mv-panel{position:absolute;left:var(--mms-panel-dock-left,16px);right:var(--mms-panel-dock-right,auto);top:var(--mms-panel-dock-top,auto);bottom:var(--mms-panel-dock-bottom,18px);z-index:24;display:flex;flex-direction:column;gap:6px;max-width:min(460px,64%);padding:8px 10px;border:1px solid var(--theme-panel-border,#d8dee9);border-radius:12px;background:rgba(12,16,22,.82);color:#eef4fc;font:12px/1.4 -apple-system,system-ui,"Segoe UI",sans-serif;backdrop-filter:blur(6px)}
-.mms-mv-panel-head{display:flex;align-items:center;gap:8px;cursor:grab;user-select:none}
-.mms-mv-panel[data-dragging="true"] .mms-mv-panel-head{cursor:grabbing}
-.mms-mv-panel[data-dragging="true"],.mms-mv-drawer[data-dragging="true"]{opacity:.94}
-/* The drag affordance both the panel and the drawer carry in their header. */
-.mms-panel-grip{flex:0 0 auto;width:14px;height:12px;border-radius:3px;opacity:.6;cursor:grab;background-image:radial-gradient(currentColor 1px,transparent 1.2px);background-size:5px 5px;background-position:1px 1px}
-.mms-mv-panel[data-dragging="true"] .mms-panel-grip,.mms-mv-drawer[data-dragging="true"] .mms-panel-grip{cursor:grabbing;opacity:.9}
+   It sits at the bottom-left of the page, fixed — there is nothing to drag or to
+   remember. The whole header toggles the body and the ⚙ (optional, see
+   mvShowSettingsButton) opens the full settings drawer. */
+.mms-mv-panel{position:absolute;left:16px;bottom:18px;z-index:24;display:flex;flex-direction:column;gap:6px;max-width:min(460px,64%);padding:8px 10px;border:1px solid var(--theme-panel-border,#d8dee9);border-radius:12px;background:rgba(12,16,22,.82);color:#eef4fc;font:12px/1.4 -apple-system,system-ui,"Segoe UI",sans-serif;backdrop-filter:blur(6px)}
+.mms-mv-panel-head{display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none}
 .mms-mv-panel-head-actions{flex:1 1 auto}
 .mms-mv-panel-title{font-weight:600;font-size:11px;letter-spacing:.02em;text-transform:uppercase;opacity:.85;white-space:nowrap}
 .mms-mv-panel-action{border:1px solid rgba(255,255,255,.22);border-radius:8px;background:transparent;color:inherit;cursor:pointer;font-size:11px;padding:2px 7px;white-space:nowrap}
@@ -6094,12 +5807,10 @@ html .player-bar .transport .mms-backdrop-toggle.mms-backdrop-toggle[data-active
    "收起" button — painted over by the app's window controls in the top-right
    corner, and the clicks landed on those buttons instead. --mms-drawer-top is
    measured from the live titlebar; the theme token is only the fallback.
-   The drawer is docked with the same four --mms-panel-dock-* values the panel
-   uses, so dragging it works identically; only the slide-in stays a transform. */
-.mms-mv-drawer{position:absolute;left:var(--mms-panel-dock-left,auto);right:var(--mms-panel-dock-right,0px);top:var(--mms-panel-dock-top,var(--mms-drawer-top,var(--titlebar-height,44px)));bottom:var(--mms-panel-dock-bottom,10px);z-index:32;display:flex;flex-direction:column;width:min(430px,94%);max-height:calc(100% - 24px);border:1px solid var(--theme-panel-border,#d8dee9);border-radius:14px;background:rgba(10,13,18,.95);color:var(--theme-text,#eef4fc);font:12px/1.5 -apple-system,system-ui,"Segoe UI",sans-serif;box-shadow:-18px 0 42px rgba(0,0,0,.34);backdrop-filter:blur(12px);-webkit-app-region:no-drag;transform:translateX(102%);transition:transform .26s cubic-bezier(.2,0,.2,1);visibility:hidden}
-.mms-mv-drawer[data-dock="left"]{transform:translateX(-102%)}
+   It is anchored to the right edge and slides in from there (transform only). */
+.mms-mv-drawer{position:absolute;right:0;top:var(--mms-drawer-top,var(--titlebar-height,44px));bottom:10px;z-index:32;display:flex;flex-direction:column;width:min(430px,94%);max-height:calc(100% - 24px);border:1px solid var(--theme-panel-border,#d8dee9);border-radius:14px 0 0 14px;background:rgba(10,13,18,.95);color:var(--theme-text,#eef4fc);font:12px/1.5 -apple-system,system-ui,"Segoe UI",sans-serif;box-shadow:-18px 0 42px rgba(0,0,0,.34);backdrop-filter:blur(12px);-webkit-app-region:no-drag;transform:translateX(102%);transition:transform .26s cubic-bezier(.2,0,.2,1);visibility:hidden}
 .mms-mv-drawer[data-open="true"]{transform:none;visibility:visible}
-.mms-mv-drawer-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 14px;border-bottom:1px solid var(--theme-panel-border,#d8dee9);cursor:grab;user-select:none}
+.mms-mv-drawer-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 14px;border-bottom:1px solid var(--theme-panel-border,#d8dee9)}
 .mms-mv-drawer-title{font-size:13px;font-weight:650}
 .mms-mv-drawer-body{flex:1 1 auto;overflow:auto;padding:10px 12px 26px;overscroll-behavior:contain}
 .mms-mv-drawer-body .mms-background{padding:0}
@@ -6187,8 +5898,6 @@ const installBackdropObserver = () => {
   // A window resize changes the auto-scale ratio.
   const onResize = () => {
     if (backdropEnabled()) applyBackdropStyle();
-    // The lyrics-page panels keep to their edge (and their remembered inset).
-    applyPanelDocks();
   };
   window.addEventListener('resize', onResize);
   if (typeof MutationObserver !== 'function') {

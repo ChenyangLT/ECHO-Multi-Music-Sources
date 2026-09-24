@@ -53,6 +53,8 @@ const text = locale === 'zh-CN'
       overlay: '暗色遮罩',
       readability: '歌词可读性增强',
       hideLyrics: 'MV 背景播放时隐藏歌词',
+      settingsButton: '歌词页显示「⚙ 设置」按钮',
+      settingsButtonHint: '关掉后歌曲详情页左下角的 MV 面板不再带这个按钮；侧栏「MV 背景」页和播放栏的 MV 按钮不受影响。',
       reset: '重置沉浸式背景',
       advanced: '匹配与同步',
       advancedHint: '与社区版一致：开启“按播放量优先匹配”时，匹配度阈值不参与筛选。',
@@ -138,6 +140,8 @@ const text = locale === 'zh-CN'
       overlay: 'Dark overlay',
       readability: 'Enhanced lyrics readability',
       hideLyrics: 'Hide lyrics while the MV plays',
+      settingsButton: 'Show the ⚙ settings button on the song page',
+      settingsButtonHint: 'While off, the MV panel at the bottom-left of the song detail page has no ⚙ button. The sidebar MV background page and the player-bar MV button are unaffected.',
       reset: 'Reset immersive background',
       advanced: 'Matching & sync',
       advancedHint: 'As in the community build: while "prefer the most viewed match" is on, the threshold does not restrict the candidates.',
@@ -450,6 +454,7 @@ immersiveGrid.append(
 background.append(immersiveGrid);
 background.append(toggleField('mvLyricsReadabilityEnhanced', text.readability, null, { strict: true }));
 background.append(toggleField('mvHideLyrics', text.hideLyrics, null, { strict: true }));
+background.append(toggleField('mvShowSettingsButton', text.settingsButton, text.settingsButtonHint));
 
 const reset = el('button', 'mmsc-btn', text.reset);
 reset.type = 'button';

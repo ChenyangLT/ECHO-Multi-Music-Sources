@@ -181,15 +181,24 @@ class Element {
     const width = ownWidth > 0 || ownHeight > 0 ? ownWidth : (Number(parentRect?.width) || 0);
     const height = ownWidth > 0 || ownHeight > 0 ? ownHeight : (Number(parentRect?.height) || 0);
     if (!(width > 0) && !(height > 0)) return { left: 0, top: 0, width: 0, height: 0, right: 0, bottom: 0 };
-    // The two floaters are absolutely positioned by the dock values the mod
-    // writes, so the shim resolves those the same way the stylesheet does — a
-    // drag would otherwise be measured against the element's unpositioned spot.
+    // The two floaters are absolutely positioned by the stylesheet (the panel is
+    // pinned bottom-left, the drawer to the right edge), so the shim resolves
+    // those offsets the same way the browser would.
     const dockLeft = this.style?.getPropertyValue?.('--mms-panel-dock-left') || '';
     const dockTop = this.style?.getPropertyValue?.('--mms-panel-dock-top') || '';
     if (dockLeft && dockTop) {
       const left = (Number(parentRect?.left) || 0) + (Number.parseFloat(dockLeft) || 0);
       const top = (Number(parentRect?.top) || 0) + (Number.parseFloat(dockTop) || 0);
       return { left, top, width, height, right: left + width, bottom: top + height };
+    }
+    if (this.classList?.contains('mms-mv-panel')) {
+      const left = (Number(parentRect?.left) || 0) + 16;
+      const bottom = (Number(parentRect?.top) || 0) + (Number(parentRect?.height) || 0) - 18;
+      return { left, top: bottom - height, width, height, right: left + width, bottom };
+    }
+    if (this.classList?.contains('mms-mv-drawer')) {
+      const right = (Number(parentRect?.left) || 0) + (Number(parentRect?.width) || 0);
+      return { left: right - width, top: 0, width, height, right, bottom: height };
     }
     let x = Number(this.ownLeft) || 0;
     let y = Number(this.ownTop) || 0;
@@ -535,10 +544,7 @@ localStorageShim.setItem('echo.external-mod.echo.multi-music-sources', JSON.stri
   mvImmersiveBackgroundScalePercent: 130,
   mvMaxQuality: '1080p',
   playlistViewMode: 'compact',
-  mvPanelDockEdge: 'right',
-  mvPanelDockAlign: 'top',
-  mvPanelDockOffset: 0,
-  mvPanelDockCross: 24,
+  mvShowSettingsButton: true,
 }));
 const windowListeners = new Map();
 const windowShim = {
@@ -692,6 +698,41 @@ const run = async () => {
   check('page renders title', text.includes('多平台音源'), text.slice(0, 70));
   check('bridge status polled', calls.some((call) => call.method === 'status'), `${calls.filter((call) => call.method === 'status').length} status calls`);
   check('providers loaded before first render', calls.some((call) => call.method === 'providers'));
+
+  // --- remembered configuration (2.0) --------------------------------------
+  // Everything the user picks has to apply to every MV and still be there after a
+  // restart. The remembered values are merged over the shipped defaults during
+  // boot and handed to the main process, which is what this session started with.
+  // Checked here, before any test changes a setting.
+  const storeKey = 'echo.external-mod.echo.multi-music-sources';
+  const storedNow = () => JSON.parse(localStorageShim.getItem(storeKey) || '{}');
+  const config = echoExternalMod.config;
+
+  // The shipped defaults, for comparison with what the remembered values overrode.
+  const shipped = JSON.parse(readFileSync(join(packageRoot, 'config.json'), 'utf8'));
+  check(
+    'the shipped default picture config is 默认（左右贴合）',
+    shipped.mvImmersiveBackgroundFitWidthPinned === true
+      && shipped.mvImmersiveBackgroundAutoScale === false
+      && shipped.mvImmersiveBackgroundScalePercent === 100,
+    `pinned=${shipped.mvImmersiveBackgroundFitWidthPinned} autoScale=${shipped.mvImmersiveBackgroundAutoScale} scale=${shipped.mvImmersiveBackgroundScalePercent}`,
+  );
+  check(
+    'a remembered configuration is applied over the shipped defaults at boot',
+    config.mvImmersiveBackgroundFitWidthPinned === false
+      && config.mvImmersiveBackgroundFit === 'contain'
+      && config.mvMaxQuality === '1080p'
+      && config.mvEnabled === true
+      && config.mvShowSettingsButton === true,
+    `pinned=${config.mvImmersiveBackgroundFitWidthPinned} fit=${config.mvImmersiveBackgroundFit} quality=${config.mvMaxQuality} settingsButton=${config.mvShowSettingsButton}`,
+  );
+  check(
+    'the remembered configuration is pushed to the main process at boot',
+    calls.some((call) => call.method === 'setSettings'
+      && call.payload?.mvImmersiveBackgroundScalePercent === 130
+      && call.payload?.mvMaxQuality === '1080p'),
+    `setSettings calls=${calls.filter((call) => call.method === 'setSettings').length}`,
+  );
 
   // --- navigation: 我的歌单 is the landing page, 背景设置 lives elsewhere ----
   const tabLabels = () => pageRoot.querySelectorAll('.mms-nav-tab').map((tab) => tab.textContent);
@@ -2650,61 +2691,16 @@ const run = async () => {
     `active=${navToggle.dataset.active} events=${navEvents.map((event) => event.type).join(',') || '(none)'}`,
   );
 
-  // --- remembered configuration (2.0) --------------------------------------
-  // Everything the user picks has to (a) apply to every MV, not just the current
-  // song, and (b) still be there after a restart. Both ride on the same layer:
-  // the change is merged into the live config and written to the host's
-  // per-package store, which is what a fresh session reads back — and this
-  // session booted with a store that already had values in it.
-  const storeKey = 'echo.external-mod.echo.multi-music-sources';
-  const storedNow = () => JSON.parse(localStorageShim.getItem(storeKey) || '{}');
-  const config = echoExternalMod.config;
-
-  // The shipped defaults, for comparison with what the remembered values overrode.
-  const shipped = JSON.parse(readFileSync(join(packageRoot, 'config.json'), 'utf8'));
-  check(
-    'the shipped default picture config is 默认（左右贴合）',
-    shipped.mvImmersiveBackgroundFitWidthPinned === true
-      && shipped.mvImmersiveBackgroundAutoScale === false
-      && shipped.mvImmersiveBackgroundScalePercent === 100,
-    `pinned=${shipped.mvImmersiveBackgroundFitWidthPinned} autoScale=${shipped.mvImmersiveBackgroundAutoScale} scale=${shipped.mvImmersiveBackgroundScalePercent}`,
-  );
-  check(
-    'a remembered configuration is applied over the shipped defaults at boot',
-    config.mvImmersiveBackgroundFitWidthPinned === false
-      && config.mvImmersiveBackgroundFit === 'contain'
-      && config.mvMaxQuality === '1080p'
-      && config.mvEnabled === true,
-    `pinned=${config.mvImmersiveBackgroundFitWidthPinned} fit=${config.mvImmersiveBackgroundFit} quality=${config.mvMaxQuality}`,
-  );
-  // The scale is one of the values the ported MV engine owns: it keeps its own
-  // copy and answers with it, so the number the mod asked for is compared where
-  // the mod hands it over (the boot push) rather than after the engine answered.
-  check(
-    'a value the MV engine owns is handed over with the remembered configuration',
-    calls.some((call) => call.method === 'setSettings'
-      && call.payload?.mvImmersiveBackgroundScalePercent === 130)
-      && Number(storedNow().mvImmersiveBackgroundScalePercent) > 0,
-    `setSettings scale=${calls.find((call) => call.method === 'setSettings')?.payload?.mvImmersiveBackgroundScalePercent} stored=${storedNow().mvImmersiveBackgroundScalePercent}`,
-  );
-  check(
-    'the remembered configuration is pushed to the main process at boot',
-    calls.some((call) => call.method === 'setSettings'
-      && call.payload?.mvImmersiveBackgroundScalePercent === 130
-      && call.payload?.mvMaxQuality === '1080p'),
-    `setSettings calls=${calls.filter((call) => call.method === 'setSettings').length}`,
-  );
-
-  // 「默认（左右贴合）」 on the layer: a `cover`ed picture is scaled so its own width
-  // matches the page, and the height is left to overflow. The picture keys are put
-  // back to the shipped state first, because the boot restored the user's own
-  // choices — which is exactly what the check above is about.
+  // --- the lyrics-page panel and its settings drawer (2.0) -----------------
+  // The picture keys are put back to the shipped state first, because the boot
+  // restored the user's own choices (which the boot checks above are about).
   config.mvImmersiveBackgroundFitWidthPinned = true;
   config.mvImmersiveBackgroundFit = 'cover';
   config.mvImmersiveBackgroundAutoScale = false;
   config.mvImmersiveBackgroundScalePercent = 100;
   config.mvImmersiveBackgroundWidthPercent = 100;
   config.mvImmersiveBackgroundHeightPercent = 100;
+  // …and the ⚙ button has its own on/off check below, starting from the shipped on.
   const mvLayer = lyricsPage.querySelector('.mms-lyrics-bg');
   const mvVideo = lyricsPage.querySelector('.mms-backdrop-video');
   check('the MV layer and its video are on the page', Boolean(mvLayer) && Boolean(mvVideo));
@@ -2732,71 +2728,54 @@ const run = async () => {
   }
 
   // The lyrics page is built and torn down as ECHO switches routes, so the panel
-  // is looked up fresh here (an earlier node would already be detached). The
-  // coordinates are reset to the shipped defaults first: this session booted with
-  // a panel the user had dragged to the top-right, which is its own check below.
-  delete config.mvPanelDockEdge;
-  delete config.mvPanelDockAlign;
-  delete config.mvPanelDockOffset;
-  delete config.mvPanelDockCross;
+  // is looked up fresh here (an earlier node would already be detached).
   await waitFor(() => lyricsPage.parentNode && lyricsPage.querySelector('.mms-mv-panel'), 'MV panel for the placement checks', 8000);
-  windowShim.dispatch('resize');
-  await settle(1);
   const panel = lyricsPage.querySelector('.mms-mv-panel');
   check('the MV panel is mounted for the placement checks', Boolean(panel));
 
-  // Its placement: bottom-left, inset a little from both edges, written as the
-  // four dock values the CSS reads (the layer is 1200x760, so "bottom 18px" is
-  // the page height minus the panel height minus the inset).
-  const dockPx = (name) => Number.parseFloat(panel.style.getPropertyValue(name));
+  // There is no drag and nothing to remember any more: the panel is pinned to the
+  // bottom-left of the page by the stylesheet, and the drawer slides in from the
+  // right edge.
   check(
-    'the MV panel opens at the bottom-left',
-    panel.dataset.dock === 'left' && panel.dataset.align === 'bottom'
-      && dockPx('--mms-panel-dock-left') === 16
-      && dockPx('--mms-panel-dock-right') === 1200 - 460 - 16
-      && dockPx('--mms-panel-dock-top') === 760 - 120 - 18
-      && dockPx('--mms-panel-dock-bottom') === 18,
-    `dock=${panel.dataset.dock}/${panel.dataset.align} l=${panel.style.getPropertyValue('--mms-panel-dock-left')} r=${panel.style.getPropertyValue('--mms-panel-dock-right')} t=${panel.style.getPropertyValue('--mms-panel-dock-top')} b=${panel.style.getPropertyValue('--mms-panel-dock-bottom')}`,
+    'the MV panel is pinned to the bottom-left by the stylesheet',
+    /\.mms-mv-panel\{position:absolute;left:16px;bottom:18px/u.test(injectedCss)
+      && panel.getBoundingClientRect().left === 16
+      && panel.getBoundingClientRect().bottom === 760 + 40 - 18,
+    `rect=${JSON.stringify(panel.getBoundingClientRect())}`,
   );
   check(
-    'the panel header carries a drag grip',
-    Boolean(panel.querySelector('.mms-panel-grip')) && /\.mms-panel-grip\{/u.test(injectedCss),
-    `grip=${Boolean(panel.querySelector('.mms-panel-grip'))}`,
-  );
-
-  // Dragging the header across and dropping it near an edge pins the panel to
-  // that edge and remembers the corner — the whole point of the feature.
-  const head = panel.querySelector('.mms-mv-panel-head');
-  head.dispatch('pointerdown', { button: 0, clientX: 100, clientY: 700, pointerId: 1 });
-  windowShim.dispatch('pointermove', { clientX: 1100, clientY: 700, pointerId: 1 });
-  windowShim.dispatch('pointerup', { clientX: 1100, clientY: 700, pointerId: 1 });
-  await settle(2);
-  await waitFor(() => storedNow().mvPanelDockEdge === 'right', 'panel position remembered', 4000);
-  check(
-    'dragging the header snaps the panel to the nearest edge',
-    panel.dataset.dock === 'right' && panel.dataset.align === 'bottom'
-      && Number.parseFloat(panel.style.getPropertyValue('--mms-panel-dock-right')) === 0,
-    `dock=${panel.dataset.dock}/${panel.dataset.align} right=${panel.style.getPropertyValue('--mms-panel-dock-right')}`,
+    'neither floater carries a drag handle any more',
+    !panel.querySelector('.mms-panel-grip')
+      && !/\.mms-panel-grip\{/u.test(injectedCss)
+      && !/mms-mv-panel\[data-dragging|mms-mv-drawer\[data-dragging/u.test(injectedCss),
+    `grip=${Boolean(panel.querySelector('.mms-panel-grip'))} css=${/\.mms-panel-grip\{/u.test(injectedCss)}`,
   );
   check(
-    'the panel position goes into the user store (so a restart keeps it)',
-    storedNow().mvPanelDockEdge === 'right'
-      && storedNow().mvPanelDockAlign === 'bottom'
-      && storedNow().mvPanelDockOffset === 0,
-    `edge=${storedNow().mvPanelDockEdge} align=${storedNow().mvPanelDockAlign} offset=${storedNow().mvPanelDockOffset}`,
+    'no placement keys are written to the user store',
+    !('mvPanelDockEdge' in storedNow()) && !('mvDrawerDockEdge' in storedNow()),
+    Object.keys(storedNow()).filter((key) => /Dock/u.test(key)).join(',') || '(none)',
   );
 
-  // The settings drawer is dragged the same way, and starts at the top-right.
-  const drawerOpenButton = panel.querySelectorAll('.mms-mv-panel-action')
+  // The ⚙ button on the panel is what opens the settings drawer, and it can be
+  // switched off from the picture settings (mvShowSettingsButton).
+  const panelActionLabels = () => panel.querySelectorAll('.mms-mv-panel-action').map((item) => item.textContent).join(',');
+  check(
+    'the panel offers the ⚙ settings button by default',
+    panelActionLabels().includes('设置'),
+    panelActionLabels(),
+  );
+  const panelSettingsButton = panel.querySelectorAll('.mms-mv-panel-action')
     .find((item) => item.textContent.includes('设置'));
-  drawerOpenButton?.click();
+  check('the panel settings button is a switch, not a drag handle', Boolean(panelSettingsButton));
+  panelSettingsButton?.click();
   await settle(3);
   const drawer = lyricsPage.querySelector('.mms-mv-drawer');
   check(
-    'the settings drawer opens on the right and carries a grip',
-    drawer?.dataset.dock === 'right' && drawer?.dataset.align === 'top'
-      && Boolean(drawer.querySelector('.mms-panel-grip')),
-    `dock=${drawer?.dataset.dock}/${drawer?.dataset.align}`,
+    'the ⚙ button opens the settings drawer from the right edge',
+    drawer?.dataset.open === 'true'
+      && /\.mms-mv-drawer\{position:absolute;right:0;top:/u.test(injectedCss)
+      && !/\.mms-mv-drawer\[data-dock/u.test(injectedCss),
+    `open=${drawer?.dataset.open}`,
   );
   const drawerBody = drawer?.querySelector('.mms-mv-drawer-body');
   const presetOptions = drawerBody?.querySelectorAll('select')
@@ -2814,17 +2793,43 @@ const run = async () => {
     fitControl?.disabled === true,
     `disabled=${fitControl?.disabled}`,
   );
-  if (drawer) {
-    const drawerHead = drawer.querySelector('.mms-mv-drawer-head');
-    drawerHead.dispatch('pointerdown', { button: 0, clientX: 900, clientY: 300, pointerId: 2 });
-    windowShim.dispatch('pointermove', { clientX: 100, clientY: 300, pointerId: 2 });
-    windowShim.dispatch('pointerup', { clientX: 100, clientY: 300, pointerId: 2 });
-    await settle(2);
-    await waitFor(() => storedNow().mvDrawerDockEdge === 'left', 'drawer position remembered', 4000);
+
+  // Turning the ⚙ button off from the drawer's own picture section removes it from
+  // the panel (and keeps the panel open, which is where the user just clicked).
+  const showSettingsRow = drawerBody?.querySelectorAll('.mms-bg-row')
+    .find((row) => row.allText().includes('⚙ 设置'));
+  const showSettingsSwitch = showSettingsRow?.querySelector('.mms-switch')?.querySelector('input');
+  check('the picture settings carry the ⚙ button switch', Boolean(showSettingsSwitch), showSettingsRow?.allText().slice(0, 60));
+  if (showSettingsSwitch) {
+    const panelWasOpen = panel.dataset.open === 'true';
+    showSettingsSwitch.checked = false;
+    showSettingsSwitch.dispatch('change');
+    await settle(3);
+    const rebuilt = lyricsPage.querySelector('.mms-mv-panel');
     check(
-      'the drawer can be dragged to the other edge and is remembered',
-      drawer.dataset.dock === 'left' && storedNow().mvDrawerDockEdge === 'left',
-      `dock=${drawer.dataset.dock} stored=${storedNow().mvDrawerDockEdge}`,
+      'switching it off removes the ⚙ button from the panel',
+      rebuilt && !rebuilt.querySelectorAll('.mms-mv-panel-action').some((item) => item.textContent.includes('设置')),
+      rebuilt ? rebuilt.querySelectorAll('.mms-mv-panel-action').map((item) => item.textContent).join(',') : 'no panel',
+    );
+    check(
+      'the panel keeps its open state while the button is rebuilt',
+      rebuilt?.dataset.open === String(panelWasOpen),
+      `open=${rebuilt?.dataset.open} was=${panelWasOpen}`,
+    );
+    check(
+      'the choice is remembered for the next start',
+      storedNow().mvShowSettingsButton === false,
+      `stored=${storedNow().mvShowSettingsButton}`,
+    );
+    // Put it back so the rest of the run sees the shipped state.
+    config.mvShowSettingsButton = true;
+    rebuilt?.remove();
+    await settle(1);
+    await waitFor(() => lyricsPage.querySelector('.mms-mv-panel'), 'panel rebuilt with the button', 4000);
+    check(
+      'switching it back on restores the ⚙ button',
+      lyricsPage.querySelectorAll('.mms-mv-panel-action').some((item) => item.textContent.includes('设置')),
+      lyricsPage.querySelectorAll('.mms-mv-panel-action').map((item) => item.textContent).join(','),
     );
   }
 

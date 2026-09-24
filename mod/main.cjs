@@ -77,6 +77,7 @@ const MV_SETTING_KEYS = [
   'mvImmersiveBackgroundOverlayOpacityPercent',
   'mvLyricsReadabilityEnhanced',
   'mvHideLyrics',
+  'mvShowSettingsButton',
   'mvRestartAudioOnLoad',
   'mvSyncMode',
   'mvReplayAudioOnChange',
@@ -160,6 +161,8 @@ const MV_DEFAULTS = {
   mvImmersiveBackgroundOverlayOpacityPercent: 0,
   mvLyricsReadabilityEnhanced: false,
   mvHideLyrics: false,
+  // The song detail page's own way into the settings drawer.
+  mvShowSettingsButton: true,
   mvRestartAudioOnLoad: true,
   mvSyncMode: 'balanced',
   mvReplayAudioOnChange: true,
