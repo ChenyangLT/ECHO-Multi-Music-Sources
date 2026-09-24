@@ -188,13 +188,15 @@ const STRINGS = {
     autoScale: '自动缩放',
     preset: '画面预设',
     presetCustom: '自定义',
+    presetFitWidth: '默认（左右贴合）',
     presetCover: '铺满（裁切填满）',
     presetContain: '窄边（完整显示）',
     presetStretch: '拉伸铺满',
     presetOriginal: '原始尺寸居中',
-    presetZoom: '放大铺满（默认）',
+    presetZoom: '放大铺满',
     presetAuto: '自动适配（社区版）',
     presetCinema: '宽银幕（上下留白）',
+    presetHint: '「默认（左右贴合）」把画面缩放到左右两侧恰好贴住窗口宽度，并随窗口自适应；高度不做限制，画面比窗口高时会超出上下边界。',
     widthLabel: '画面宽度',
     heightLabel: '画面高度',
     fitLabel: '填充方式',
@@ -257,6 +259,7 @@ const STRINGS = {
     panelHide: '隐藏歌词',
     panelShow: '显示歌词',
     panelDisable: '关闭背景',
+    panelDragHint: '拖动标题栏移动面板；靠近边缘会自动吸附，位置会被记住',
     trackCount: (n) => `${n} 首`,
     accountUid: (id) => `UID ${id}`,
     playFailed: '播放失败',
@@ -430,13 +433,15 @@ const STRINGS = {
     autoScale: 'Auto scale',
     preset: 'Picture preset',
     presetCustom: 'Custom',
+    presetFitWidth: 'Default (fits left & right)',
     presetCover: 'Fill the frame (crop)',
     presetContain: 'Letterbox (whole video)',
     presetStretch: 'Stretch to fill',
     presetOriginal: 'Original size, centred',
-    presetZoom: 'Zoomed fill (default)',
+    presetZoom: 'Zoomed fill',
     presetAuto: 'Automatic (community build)',
     presetCinema: 'Widescreen (letterboxed)',
+    presetHint: '"Default (fits left & right)" scales the picture so it is exactly as wide as the window and keeps up with resizing; the height is left alone, so a taller picture simply runs past the top and bottom edges.',
     widthLabel: 'Video width',
     heightLabel: 'Video height',
     fitLabel: 'Fitting',
@@ -499,6 +504,7 @@ const STRINGS = {
     panelHide: 'Hide lyrics',
     panelShow: 'Show lyrics',
     panelDisable: 'Turn background off',
+    panelDragHint: 'Drag the header to move the panel; it snaps to the nearest edge and the spot is remembered',
     trackCount: (n) => `${n} tracks`,
     playFailed: 'Playback failed',
     noProviders: 'No music platform is available. Check the log for bridge load errors.',
@@ -1714,6 +1720,12 @@ const backgroundConfig = () => {
     fit: ['cover', 'contain', 'fill', 'none'].includes(config.mvImmersiveBackgroundFit)
       ? config.mvImmersiveBackgroundFit
       : 'cover',
+    // 「默认（左右贴合）」: the video is scaled so its picture is exactly as wide
+    // as the page, whatever its aspect ratio, and nothing is done about the
+    // height — a tall video simply runs past the bottom edge. This is a per-user
+    // setting (mvImmersiveBackgroundFitWidthPinned) rather than a fitting value
+    // so it survives a restart and applies to every MV.
+    fitWidth: config.mvImmersiveBackgroundFitWidthPinned === true,
     offsetX: clampNumber(config.mvImmersiveBackgroundOffsetXPercent, 0, 100, 50),
     offsetY: clampNumber(config.mvImmersiveBackgroundOffsetYPercent, 0, 100, 50),
     blur: clampNumber(pick('songBackgroundBlurPx', 'mvImmersiveBackgroundBlurPx', 0), 0, 32, 0),
@@ -1758,6 +1770,11 @@ const backgroundConfig = () => {
  * A preset is nothing but a coherent set of the size / fitting / zoom / position
  * keys, so after picking one every value stays editable by hand. `match` finds
  * the preset the current configuration corresponds to (or 'custom').
+ *
+ * `widthPinned` is what 「默认（左右贴合）」 uses: it is a preset of its own rather
+ * than another fitting, because no single `object-fit` value scales a picture to
+ * exactly the width of its box in both directions. It is also the shipped
+ * default, so a fresh install already fits left and right exactly.
  */
 const BACKDROP_PRESET_BASE = {
   mvImmersiveBackgroundAutoScale: false,
@@ -1766,9 +1783,16 @@ const BACKDROP_PRESET_BASE = {
   mvImmersiveBackgroundScalePercent: 100,
   mvImmersiveBackgroundOffsetXPercent: 50,
   mvImmersiveBackgroundOffsetYPercent: 50,
+  mvImmersiveBackgroundFitWidthPinned: false,
 };
 
 const BACKDROP_PRESETS = [
+  {
+    id: 'fitwidth',
+    labelKey: 'presetFitWidth',
+    // 按宽度贴合：cover 让画面不留黑边，宽度贴合再把它缩到与窗口同宽。
+    patch: { ...BACKDROP_PRESET_BASE, mvImmersiveBackgroundFit: 'cover', mvImmersiveBackgroundFitWidthPinned: true },
+  },
   { id: 'cover', labelKey: 'presetCover', patch: { ...BACKDROP_PRESET_BASE, mvImmersiveBackgroundFit: 'cover' } },
   { id: 'contain', labelKey: 'presetContain', patch: { ...BACKDROP_PRESET_BASE, mvImmersiveBackgroundFit: 'contain' } },
   { id: 'stretch', labelKey: 'presetStretch', patch: { ...BACKDROP_PRESET_BASE, mvImmersiveBackgroundFit: 'fill' } },
@@ -2152,13 +2176,299 @@ const escalateShortBackdropSource = () => {
   backdrop.escalate();
 };
 
+// ---------------------------------------------------------------------------
+// Where the lyrics-page MV panel and its settings drawer live
+// ---------------------------------------------------------------------------
+//
+// Both float over the song detail page and both can be dragged by their header.
+// Once dropped, they snap to the nearest edge and the spot is remembered per
+// user, so the panel opens where it was left instead of jumping back to a corner
+// — it starts at the bottom-left.
+//
+// Placement is kept as a corner (`dock` + `align`) plus an inset from that
+// corner's two edges. An inset of 0 *is* the edge, so a resize only has to clamp
+// the insets rather than guess at a percentage: a panel left at the bottom-left
+// stays there at any window size. The four values are stored as plain config
+// keys so they travel through the host's settings store unchanged.
+
+const PANEL_DOCK_EDGES = ['left', 'right'];
+const PANEL_DOCK_VERTICALS = ['top', 'bottom'];
+// How close to an edge the panel has to be dropped to snap onto it.
+const PANEL_SNAP_PX = 26;
+// A little breathing room so a docked panel never touches the window frame.
+const PANEL_DOCK_MARGIN_PX = 16;
+
 /**
- * The lyrics-page MV panel: the actions ECHO-main's MvPanel exposes (match
- * again, quality/offset nudges, open in browser, hide lyrics, turn the
- * background off) without leaving the lyrics page. The header also opens the
- * full settings drawer, and the whole header is clickable so the panel can be
- * expanded without hunting for the small arrow.
+ * The two floaters and the config keys their placement lives in.
+ *
+ * The action panel ships at the bottom-left and the full settings drawer at the
+ * top-right (where it has always opened).
  */
+const PANEL_DOCKS = {
+  panel: {
+    edge: 'mvPanelDockEdge',
+    align: 'mvPanelDockAlign',
+    offset: 'mvPanelDockOffset',
+    cross: 'mvPanelDockCross',
+    defaults: { dock: 'left', align: 'bottom', offset: 16, cross: 18 },
+  },
+  drawer: {
+    edge: 'mvDrawerDockEdge',
+    align: 'mvDrawerDockAlign',
+    offset: 'mvDrawerDockOffset',
+    cross: 'mvDrawerDockCross',
+    defaults: { dock: 'right', align: 'top', offset: 0, cross: 8 },
+  },
+};
+
+const panelDockSpecFor = (element) => (element === backdrop.drawer ? PANEL_DOCKS.drawer : PANEL_DOCKS.panel);
+
+const readPanelDock = (spec) => {
+  const fallback = spec.defaults;
+  const dock = PANEL_DOCK_EDGES.includes(config[spec.edge]) ? config[spec.edge] : fallback.dock;
+  const align = PANEL_DOCK_VERTICALS.includes(config[spec.align]) ? config[spec.align] : fallback.align;
+  const size = (value, fallbackValue) => {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) return fallbackValue;
+    return Math.max(0, Math.min(4000, Math.round(parsed)));
+  };
+  return {
+    dock,
+    align,
+    offset: size(config[spec.offset], fallback.offset),
+    cross: size(config[spec.cross], fallback.cross),
+  };
+};
+
+/** The node the dock coordinates are measured against (the lyrics page). */
+const panelDockArea = (element) => {
+  const page = element?.parentNode;
+  if (page && typeof page.getBoundingClientRect === 'function') return page;
+  return document.body;
+};
+
+/**
+ * The box of an element / its page in pixels.
+ *
+ * Both fall back to the window size, and a box with no layout yet reports zero —
+ * a closed drawer is off-screen, so measuring it must never shrink a remembered
+ * inset to nothing.
+ */
+const measureBox = (node) => {
+  const rect = typeof node?.getBoundingClientRect === 'function' ? node.getBoundingClientRect() : null;
+  return { width: Number(rect?.width) || 0, height: Number(rect?.height) || 0, left: Number(rect?.left) || 0, top: Number(rect?.top) || 0 };
+};
+
+const measurePage = (element) => {
+  const box = measureBox(panelDockArea(element));
+  return { width: box.width || Number(window.innerWidth) || 0, height: box.height || Number(window.innerHeight) || 0 };
+};
+
+/** The largest inset that still keeps the element inside the page. */
+const clampPanelInset = (element, position) => {
+  const page = measurePage(element);
+  const box = measureBox(element);
+  const maxOffset = Math.max(0, page.width - box.width - PANEL_DOCK_MARGIN_PX);
+  const maxCross = Math.max(0, page.height - box.height - PANEL_DOCK_MARGIN_PX);
+  return {
+    dock: position.dock,
+    align: position.align,
+    // An element with no layout yet (hidden drawer) keeps its stored inset.
+    offset: box.width > 0 ? Math.max(0, Math.min(position.offset, maxOffset)) : position.offset,
+    cross: box.height > 0 ? Math.max(0, Math.min(position.cross, maxCross)) : position.cross,
+  };
+};
+
+/**
+ * Writes a dock position onto the element.
+ *
+ * All four edges are always written as pixels (the pair the position does not use
+ * is derived from the element's own box) so the stylesheet never has to fall back
+ * to `auto` and a measured offset can be compared with the stored one directly.
+ */
+const writePanelDock = (element, position) => {
+  if (!element?.style?.setProperty) return;
+  const box = measureBox(element);
+  const page = measurePage(element);
+  const pageWidth = page.width;
+  const pageHeight = page.height;
+  const width = box.width;
+  const height = box.height;
+
+  const left = position.dock === 'left' ? position.offset : pageWidth - width - position.offset;
+  const top = position.align === 'top' ? position.cross : pageHeight - height - position.cross;
+
+  element.dataset.dock = position.dock;
+  element.dataset.align = position.align;
+  element.style.setProperty('--mms-panel-dock-left', `${Math.round(left)}px`);
+  element.style.setProperty('--mms-panel-dock-right', `${Math.round(pageWidth - width - left)}px`);
+  element.style.setProperty('--mms-panel-dock-top', `${Math.round(top)}px`);
+  element.style.setProperty('--mms-panel-dock-bottom', `${Math.round(pageHeight - height - top)}px`);
+};
+
+/** Places an element where the user last left it (or at its default corner). */
+const applyPanelDock = (element) => {
+  if (!element?.isConnected) return;
+  writePanelDock(element, clampPanelInset(element, readPanelDock(panelDockSpecFor(element))));
+};
+
+const applyPanelDocks = () => {
+  applyPanelDock(backdrop.panel);
+  applyPanelDock(backdrop.drawer);
+};
+
+/** The store payload for a position (kept as flat keys, see PANEL_DOCKS). */
+const panelDockPatch = (spec, position) => ({
+  [spec.edge]: position.dock,
+  [spec.align]: position.align,
+  [spec.offset]: Math.max(0, Math.round(position.offset)),
+  [spec.cross]: Math.max(0, Math.round(position.cross)),
+});
+
+/** The corner the element is closest to, used on drop so it snaps to an edge. */
+const nearestPanelDock = (element) => {
+  const page = panelDockArea(element);
+  const bounds = typeof page?.getBoundingClientRect === 'function' ? page.getBoundingClientRect() : null;
+  const box = element.getBoundingClientRect();
+  const width = Number(bounds?.width) || Number(window.innerWidth);
+  const height = Number(bounds?.height) || Number(window.innerHeight);
+  const originX = Number(bounds?.left) || 0;
+  const originY = Number(bounds?.top) || 0;
+  const left = (Number(box.left) || 0) - originX;
+  const top = (Number(box.top) || 0) - originY;
+  const dock = left + box.width / 2 < width / 2 ? 'left' : 'right';
+  const align = top + box.height / 2 < height / 2 ? 'top' : 'bottom';
+  // How far the element's own edge sits from each side of the page.
+  const offset = dock === 'left' ? left : width - (left + box.width);
+  const cross = align === 'top' ? top : height - (top + box.height);
+  return { dock, align, offset: Math.max(0, Math.round(offset)), cross: Math.max(0, Math.round(cross)) };
+};
+
+/**
+ * Makes a panel header a drag handle: move it anywhere, and on release snap it
+ * to the nearest edge (a corner) and remember where it ended up.
+ *
+ * The body keeps its own behaviour — the panel's header already toggles it and
+ * the drawer's controls keep working — so only the header starts a drag, and a
+ * pointer that moved is treated as a drag rather than a click.
+ */
+const attachPanelDrag = (element, handle) => {
+  if (element.dataset.dragReady === 'true') return;
+  element.dataset.dragReady = 'true';
+
+  let drag = null;
+  const pageRectOf = () => {
+    const page = panelDockArea(element);
+    const bounds = typeof page?.getBoundingClientRect === 'function' ? page.getBoundingClientRect() : null;
+    return {
+      left: Number(bounds?.left) || 0,
+      top: Number(bounds?.top) || 0,
+      width: Number(bounds?.width) || Number(window.innerWidth),
+      height: Number(bounds?.height) || Number(window.innerHeight),
+    };
+  };
+
+  const move = (event) => {
+    if (!drag) return;
+    const page = pageRectOf();
+    const box = element.getBoundingClientRect();
+    const left = Math.max(0, Math.min(page.width - box.width, event.clientX - drag.grabX));
+    const top = Math.max(0, Math.min(page.height - box.height, event.clientY - drag.grabY));
+    // The element is moved by writing its four edges, which is exactly what the
+    // remembered dock position is: no transform, so it never fights the drawer's
+    // slide-in transition.
+    element.style.setProperty('--mms-panel-dock-left', `${Math.round(left)}px`);
+    element.style.setProperty('--mms-panel-dock-right', `${Math.round(page.width - box.width - left)}px`);
+    element.style.setProperty('--mms-panel-dock-top', `${Math.round(top)}px`);
+    element.style.setProperty('--mms-panel-dock-bottom', `${Math.round(page.height - box.height - top)}px`);
+    if (!drag.moved && Math.abs(event.clientX - drag.startX) + Math.abs(event.clientY - drag.startY) > 3) {
+      drag.moved = true;
+      element.dataset.dragging = 'true';
+    }
+    event.preventDefault();
+  };
+
+  const stopListening = () => {
+    try {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', finish);
+      window.removeEventListener('pointercancel', cancel);
+    } catch {
+      /* ignore */
+    }
+  };
+
+  const finish = (event) => {
+    if (!drag) return;
+    const moved = drag.moved;
+    drag = null;
+    stopListening();
+    element.dataset.dragging = 'false';
+    if (!moved) {
+      // A plain click on the header: leave the placement alone.
+      applyPanelDock(element);
+      return;
+    }
+    const dropped = nearestPanelDock(element);
+    // Within the snap distance of an edge → sit exactly on it. Otherwise keep the
+    // free position, expressed against the corner it is nearest to.
+    const snapped = {
+      dock: dropped.dock,
+      align: dropped.align,
+      offset: dropped.offset <= PANEL_SNAP_PX ? 0 : dropped.offset,
+      cross: dropped.cross <= PANEL_SNAP_PX ? 0 : dropped.cross,
+    };
+    writePanelDock(element, snapped);
+    // Re-read the placed insets so the remembered value is the visible one.
+    const page = panelDockArea(element);
+    const bounds = typeof page?.getBoundingClientRect === 'function' ? page.getBoundingClientRect() : null;
+    const box = element.getBoundingClientRect();
+    const width = Number(bounds?.width) || Number(window.innerWidth);
+    const height = Number(bounds?.height) || Number(window.innerHeight);
+    const left = (Number(box.left) || 0) - (Number(bounds?.left) || 0);
+    const top = (Number(box.top) || 0) - (Number(bounds?.top) || 0);
+    const stored = {
+      dock: snapped.dock,
+      align: snapped.align,
+      offset: Math.max(0, Math.round(snapped.dock === 'left' ? left : width - (left + box.width))),
+      cross: Math.max(0, Math.round(snapped.align === 'top' ? top : height - (top + box.height))),
+    };
+    void persistBackgroundSettings(panelDockPatch(panelDockSpecFor(element), stored));
+    event?.preventDefault?.();
+  };
+
+  const cancel = () => {
+    if (!drag) return;
+    drag = null;
+    stopListening();
+    element.dataset.dragging = 'false';
+    applyPanelDock(element);
+  };
+
+  handle.addEventListener('pointerdown', (event) => {
+    if (event.button !== 0) return;
+    // Buttons inside the header keep their own click behaviour.
+    const tag = String(event.target?.tagName || '').toUpperCase();
+    if (tag === 'BUTTON' || tag === 'INPUT' || tag === 'SELECT') return;
+    const box = element.getBoundingClientRect();
+    drag = {
+      startX: event.clientX,
+      startY: event.clientY,
+      grabX: event.clientX - box.left,
+      grabY: event.clientY - box.top,
+      moved: false,
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', finish);
+    window.addEventListener('pointercancel', cancel);
+  });
+
+  // The first paint has no size to measure yet, so place the element once it has
+  // been laid out as well.
+  if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => applyPanelDock(element));
+};
+
+
 const ensureBackdropPanel = () => {
   const page = lyricsPage();
   if (!page) {
@@ -2183,7 +2493,11 @@ const ensureBackdropPanel = () => {
     event?.stopPropagation?.();
     toggleOpen();
   });
-  head.append(title, h('span', 'mms-mv-panel-head-actions', '') , settings, toggle);
+  // A visible grip says the header can be dragged; the header is the handle.
+  const grip = h('span', 'mms-panel-grip');
+  grip.title = copy.panelDragHint;
+  grip.setAttribute('aria-hidden', 'true');
+  head.append(grip, title, h('span', 'mms-mv-panel-head-actions', '') , settings, toggle);
   head.addEventListener('click', () => toggleOpen());
   const body = h('div', 'mms-mv-panel-body');
   panel.append(head, body);
@@ -2192,6 +2506,9 @@ const ensureBackdropPanel = () => {
   if (anchor?.nextSibling) page.insertBefore(panel, anchor.nextSibling);
   else page.append(panel);
   backdrop.panel = panel;
+  // Bottom-left by default, and wherever the user last dropped it after that.
+  attachPanelDrag(panel, head);
+  applyPanelDock(panel);
   renderBackdropPanelBody();
   return panel;
 };
@@ -2230,9 +2547,10 @@ const syncDrawerTop = () => {
 };
 
 /**
- * The full settings drawer on the right edge of the lyrics page: the same
- * content as the sidebar's 「背景设置」 page, so everything can be adjusted
- * without leaving the song detail page.
+ * The settings drawer: the same content as the sidebar's 「背景设置」 page, so
+ * everything can be adjusted without leaving the song detail page. It opens on
+ * the right, is dragged by its own header like the panel, snaps to the nearest
+ * edge and remembers where it was left.
  */
 const ensureBackdropDrawer = () => {
   const page = lyricsPage();
@@ -2245,7 +2563,11 @@ const ensureBackdropDrawer = () => {
   const drawer = h('aside', DRAWER_CLASS);
   drawer.dataset.open = 'false';
   const head = h('div', 'mms-mv-drawer-head');
+  const grip = h('span', 'mms-panel-grip');
+  grip.title = copy.panelDragHint;
+  grip.setAttribute('aria-hidden', 'true');
   head.append(
+    grip,
     h('strong', 'mms-mv-drawer-title', copy.drawerTitle),
     button('mms-mv-panel-action', copy.drawerClose, () => closeBackdropDrawer()),
   );
@@ -2254,6 +2576,8 @@ const ensureBackdropDrawer = () => {
   page.append(drawer);
   backdrop.drawer = drawer;
   syncDrawerTop();
+  attachPanelDrag(drawer, head);
+  applyPanelDock(drawer);
   return drawer;
 };
 
@@ -2268,6 +2592,9 @@ const openBackdropDrawer = () => {
   drawer.dataset.open = 'true';
   renderBackdropDrawerBody();
   bodyClicked(drawer);
+  // The placement is measured once the drawer is actually laid out (a closed
+  // drawer is off-screen and has no usable box).
+  applyPanelDock(drawer);
 };
 
 const closeBackdropDrawer = () => {
@@ -2487,6 +2814,34 @@ const calculateImmersiveAutoScale = () => {
   return Math.min(3.5, Math.max(1, coverRatio / containRatio));
 };
 
+/**
+ * The scale that makes a `cover`ed picture exactly as wide as its box.
+ *
+ * With `object-fit: cover` the picture is already scaled to cover the box; it is
+ * exactly the width of the box only when the box and the picture share an aspect
+ * ratio. Otherwise the picture overflows sideways (box taller than the picture)
+ * or has its sides cropped (box wider than the picture), and this factor brings
+ * whichever edge is off back to the box — left and right then line up precisely,
+ * at an unchanged aspect ratio, while the height is left to overflow or crop on
+ * its own. Measured from the live element, so it follows every window resize.
+ */
+const calculateFittedWidthScale = () => {
+  const node = backdrop.node;
+  const video = backdrop.video;
+  const bounds = typeof node?.getBoundingClientRect === 'function' ? node.getBoundingClientRect() : null;
+  const boxWidth = Number(bounds?.width) || Number(window.innerWidth) || 0;
+  const boxHeight = Number(bounds?.height) || Number(window.innerHeight) || 0;
+  const videoWidth = Number(video?.videoWidth) || 0;
+  const videoHeight = Number(video?.videoHeight) || 0;
+  if (!(boxWidth > 0 && boxHeight > 0 && videoWidth > 0 && videoHeight > 0)) return 1;
+  const coverRatio = Math.max(boxWidth / videoWidth, boxHeight / videoHeight);
+  const fittedRatio = boxWidth / videoWidth;
+  if (!(coverRatio > 0) || !(fittedRatio > 0)) return 1;
+  // The same clamp the community build uses for its own automatic scale, so a
+  // freak aspect ratio cannot blow the picture up out of all proportion.
+  return Math.min(3.5, coverRatio / fittedRatio);
+};
+
 const applyBackdropStyle = () => {
   const node = backdrop.node;
   if (!node) {
@@ -2496,16 +2851,24 @@ const applyBackdropStyle = () => {
 
   const settings = backgroundConfig();
   const autoScale = settings.autoScale ? calculateImmersiveAutoScale() : 1;
+  // 「默认（左右贴合）」 wins over the fitting: it pins the *picture* to the width
+  // of the page instead of filling the box, which no object-fit value can do.
+  // The zoom (and, while auto scale is on, the letterbox ratio) still applies.
+  const fitted = settings.fitWidth ? calculateFittedWidthScale() : null;
+  const scale = fitted === null ? (settings.scalePercent / 100) * autoScale : fitted * (settings.scalePercent / 100);
   node.dataset.autoScale = String(settings.autoScale);
   node.dataset.readability = String(settings.readability);
-  node.dataset.fit = settings.autoScale ? 'contain' : settings.fit;
-  node.style.setProperty('--mms-immersive-scale', ((settings.scalePercent / 100) * autoScale).toFixed(2));
+  node.dataset.fitWidth = String(settings.fitWidth);
+  node.dataset.fit = settings.fitWidth ? 'fit-width' : (settings.autoScale ? 'contain' : settings.fit);
+  node.style.setProperty('--mms-immersive-scale', scale.toFixed(4));
   node.style.setProperty('--mms-immersive-auto-scale', autoScale.toFixed(2));
   // Size / fitting of the video box; auto-scale always contains the video so the
-  // computed ratio can compensate the letterbox (ECHO-main's behaviour).
+  // computed ratio can compensate the letterbox (ECHO-main's behaviour). With the
+  // width fitting the box is exactly the page and the video covers it, so the
+  // picture fills the full width and is scaled as one piece (no distortion).
   node.style.setProperty('--mms-immersive-width', `${settings.widthPercent}%`);
   node.style.setProperty('--mms-immersive-height', `${settings.heightPercent}%`);
-  node.style.setProperty('--mms-immersive-fit', settings.autoScale ? 'contain' : settings.fit);
+  node.style.setProperty('--mms-immersive-fit', settings.fitWidth ? 'cover' : (settings.autoScale ? 'contain' : settings.fit));
   node.style.setProperty('--mms-immersive-position-x', `${settings.offsetX}%`);
   node.style.setProperty('--mms-immersive-position-y', `${settings.offsetY}%`);
   node.style.setProperty('--mms-immersive-blur', `${settings.blur}px`);
@@ -3285,6 +3648,9 @@ const persistBackgroundSettings = async (patch, options = {}) => {
   } catch {
     /* hosts without the config API keep the in-memory value */
   }
+  // Two layers remember the choice: the host's per-package store (so the next
+  // start has it) and the host's config.json view (so the config dialog agrees).
+  commitInstanceConfig(patch);
 
   applyBackdropStyle();
   syncBackdropLoop();
@@ -3297,6 +3663,156 @@ const persistBackgroundSettings = async (patch, options = {}) => {
     void pollBackdrop();
   }
   if (options.render !== false) renderSoon();
+};
+
+// ---------------------------------------------------------------------------
+// Remembered user configuration
+// ---------------------------------------------------------------------------
+//
+// The package's config.json is the *default* file: it ships with the archive,
+// so a value the user picks while playing can never be written back into it.
+// Everything the user changes here (picture preset, fitting, zoom, sync, the
+// lyrics-page panel positions) is therefore kept per user and merged over the
+// defaults on every start, which is what makes one choice — "默认（左右贴合）",
+// say — apply to every MV of every song and survive a restart.
+//
+// Two layers hold the same object on purpose:
+//   1. the host's per-package store (`echoExternalMod.settings`, localStorage
+//      backed) — the normal path;
+//   2. the host's config.json (`echoExternalMod.config`) — kept in step so the
+//      config dialog and the sidebar read the same values;
+// plus a direct localStorage write as a last-resort fallback for hosts whose
+// per-package store is missing.
+
+const STORED_CONFIG_KEY = 'echo.mms.user-config.v2';
+// A guard against unbounded growth: values are primitives, so this is plenty.
+const STORED_CONFIG_MAX_BYTES = 200_000;
+
+const readJsonRecord = (raw) => {
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+};
+
+const safeLocalStorage = () => {
+  try {
+    return window?.localStorage || null;
+  } catch {
+    // A locked-down store throws on access rather than returning null.
+    return null;
+  }
+};
+
+const readStoredConfig = () => {
+  try {
+    const fromHost = external.settings?.get?.();
+    if (fromHost && typeof fromHost === 'object') return fromHost;
+  } catch {
+    /* fall through to the direct store */
+  }
+  const store = safeLocalStorage();
+  if (!store) return {};
+  try {
+    return readJsonRecord(store.getItem(STORED_CONFIG_KEY));
+  } catch {
+    return {};
+  }
+};
+
+/**
+ * Merges the remembered values over the package defaults, once per start.
+ *
+ * Runs again when the host's store resolves late (a host that returns a promise)
+ * — but only until the user has changed something, so a slow read can never
+ * overwrite a fresh choice.
+ */
+let instanceConfigDirty = false;
+const loadInstanceConfig = (stored) => {
+  if (!stored || typeof stored !== 'object' || instanceConfigDirty) return false;
+  const overlay = {};
+  for (const [key, value] of Object.entries(stored)) {
+    if (value === undefined) continue;
+    if (config[key] === value) continue;
+    overlay[key] = value;
+    config[key] = value;
+  }
+  applyBackdropStyle();
+  if (Object.keys(overlay).length) {
+    // The lyrics-page panel and the drawer mirror the configuration, so they are
+    // rebuilt when a remembered value arrives.
+    if (backdrop.drawer?.dataset.open === 'true') backdrop.drawerDirty = true;
+    renderBackdropPanelBody(true);
+    refreshBackgroundPage({ force: true });
+    return true;
+  }
+  return false;
+};
+
+const resolveStoredConfigRead = () => {
+  let value = null;
+  try {
+    value = external.settings?.get?.();
+  } catch {
+    value = null;
+  }
+  if (value && typeof value === 'object') {
+    loadInstanceConfig(value);
+    return;
+  }
+  if (value && typeof value.then === 'function') {
+    void value.then((resolved) => {
+      if (resolved && typeof resolved === 'object') loadInstanceConfig(resolved);
+    }).catch(() => {});
+    return;
+  }
+  loadInstanceConfig(readStoredConfig());
+};
+
+/**
+ * Writes a patch to every layer that remembers it.
+ *
+ * Called for every user-visible setting change, so it stays deliberately small:
+ * one object merge, one host call, one localStorage fallback.
+ */
+const commitInstanceConfig = (patch) => {
+  if (patch && typeof patch === 'object') {
+    Object.assign(config, patch);
+    instanceConfigDirty = true;
+  }
+  try {
+    external.settings?.set?.({ ...config });
+  } catch {
+    /* the config object above still reflects the change */
+  }
+  const store = safeLocalStorage();
+  if (!store) return;
+  try {
+    const payload = JSON.stringify({ ...config });
+    if (payload.length <= STORED_CONFIG_MAX_BYTES) store.setItem(STORED_CONFIG_KEY, payload);
+  } catch {
+    /* a full or disabled store must not break the page */
+  }
+};
+
+/**
+ * Pushes the remembered configuration into main.cjs once at start.
+ *
+ * The main process keeps its own settings object for the parts only it needs
+ * (the MV request pipeline), and it starts from config.json, so without this a
+ * restart would resolve the first video with the shipped defaults instead of the
+ * values the user chose.
+ */
+const syncStoredConfigToMain = async () => {
+  const patch = { ...config };
+  if (!Object.keys(patch).length) return;
+  try {
+    await invokeMain('setSettings', patch);
+  } catch {
+    /* the page still uses the local values */
+  }
 };
 
 // ---------------------------------------------------------------------------
@@ -4279,14 +4795,18 @@ const bgRow = (label, control, hint) => {
   return row;
 };
 
-const bgSelect = (key, options, onChanged) => {
+const bgSelect = (key, options, onChanged, options2 = {}) => {
   const select = h('select', 'mms-select');
+  // A value the element shows without being the stored one (the width fitting
+  // pins the picture by itself, so the fitting dropdown still reads 「铺满」).
+  const shown = options2.displayValue !== undefined ? options2.displayValue : config[key];
   for (const [value, label] of options) {
     const option = h('option', null, label);
     option.value = value;
-    if (String(config[key] ?? '') === String(value)) option.selected = true;
+    if (String(shown ?? '') === String(value)) option.selected = true;
     select.append(option);
   }
+  if (options2.disabled) select.disabled = true;
   select.addEventListener('change', () => {
     void persistBackgroundSettings({ [key]: select.value }, onChanged ? { reload: true } : {});
   });
@@ -4762,7 +5282,7 @@ const renderBackgroundSettings = ({ masterSwitch = false } = {}) => {
   // ---- picture -----------------------------------------------------------
   const pictureSection = bgSection(copy.backdrop, copy.backdropDragHint);
   pictureSection.append(bgRow(copy.immersive, bgToggle('mvImmersiveBackground')));
-  pictureSection.append(bgRow(copy.preset, bgPresetSelect()));
+  pictureSection.append(bgRow(copy.preset, bgPresetSelect(), copy.presetHint));
   pictureSection.append(bgRow(copy.autoScale, bgToggle('mvImmersiveBackgroundAutoScale')));
   pictureSection.append(bgRow(copy.widthLabel, bgSlider('mvImmersiveBackgroundWidthPercent', 10, 200, 1, '%')));
   pictureSection.append(bgRow(copy.heightLabel, bgSlider('mvImmersiveBackgroundHeightPercent', 10, 200, 1, '%')));
@@ -4771,7 +5291,12 @@ const renderBackgroundSettings = ({ masterSwitch = false } = {}) => {
     ['contain', copy.fitContain],
     ['fill', copy.fitFill],
     ['none', copy.fitOriginal],
-  ])));
+  ], false, {
+    // Under 「默认（左右贴合）」 the width fitting decides the picture size, so the
+    // fitting reads 铺满 (what it covers with) and does not pretend to apply.
+    displayValue: config.mvImmersiveBackgroundFitWidthPinned === true ? 'cover' : undefined,
+    disabled: config.mvImmersiveBackgroundFitWidthPinned === true,
+  })));
   pictureSection.append(bgRow(copy.scaleLabel, bgSlider('mvImmersiveBackgroundScalePercent', 70, 220, 1, '%')));
   pictureSection.append(bgRow(copy.offsetXLabel, bgSlider('mvImmersiveBackgroundOffsetXPercent', 0, 100, 1, '%')));
   pictureSection.append(bgRow(copy.offsetYLabel, bgSlider('mvImmersiveBackgroundOffsetYPercent', 0, 100, 1, '%')));
@@ -5539,9 +6064,18 @@ html .player-bar .transport .mms-backdrop-toggle.mms-backdrop-toggle[data-active
 .mms-bg-offset .mms-search-input{flex:1 1 220px;min-width:0;max-width:none}
 .mms-bg-offset-value{min-width:4.2em;text-align:center;font-variant-numeric:tabular-nums;color:var(--theme-muted-text,#64748b);font-size:11px}
 /* Lyrics-page MV panel: the actions ECHO-main's MvPanel exposes, on the lyrics page.
-   The whole header toggles the body and the ⚙ opens the full settings drawer. */
-.mms-mv-panel{position:absolute;right:16px;bottom:18px;z-index:24;display:flex;flex-direction:column;gap:6px;max-width:min(460px,64%);padding:8px 10px;border:1px solid var(--theme-panel-border,#d8dee9);border-radius:12px;background:rgba(12,16,22,.82);color:#eef4fc;font:12px/1.4 -apple-system,system-ui,"Segoe UI",sans-serif;backdrop-filter:blur(6px)}
-.mms-mv-panel-head{display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none}
+   It starts at the bottom-left and is moved by dragging its header; the four
+   --mms-panel-dock-* values are written by applyPanelDock()/the drag handler, so
+   the panel can sit against any edge (and away from one) without a transform —
+   transforms are reserved for the drawer's slide-in. The whole header toggles the
+   body and the ⚙ opens the full settings drawer. */
+.mms-mv-panel{position:absolute;left:var(--mms-panel-dock-left,16px);right:var(--mms-panel-dock-right,auto);top:var(--mms-panel-dock-top,auto);bottom:var(--mms-panel-dock-bottom,18px);z-index:24;display:flex;flex-direction:column;gap:6px;max-width:min(460px,64%);padding:8px 10px;border:1px solid var(--theme-panel-border,#d8dee9);border-radius:12px;background:rgba(12,16,22,.82);color:#eef4fc;font:12px/1.4 -apple-system,system-ui,"Segoe UI",sans-serif;backdrop-filter:blur(6px)}
+.mms-mv-panel-head{display:flex;align-items:center;gap:8px;cursor:grab;user-select:none}
+.mms-mv-panel[data-dragging="true"] .mms-mv-panel-head{cursor:grabbing}
+.mms-mv-panel[data-dragging="true"],.mms-mv-drawer[data-dragging="true"]{opacity:.94}
+/* The drag affordance both the panel and the drawer carry in their header. */
+.mms-panel-grip{flex:0 0 auto;width:14px;height:12px;border-radius:3px;opacity:.6;cursor:grab;background-image:radial-gradient(currentColor 1px,transparent 1.2px);background-size:5px 5px;background-position:1px 1px}
+.mms-mv-panel[data-dragging="true"] .mms-panel-grip,.mms-mv-drawer[data-dragging="true"] .mms-panel-grip{cursor:grabbing;opacity:.9}
 .mms-mv-panel-head-actions{flex:1 1 auto}
 .mms-mv-panel-title{font-weight:600;font-size:11px;letter-spacing:.02em;text-transform:uppercase;opacity:.85;white-space:nowrap}
 .mms-mv-panel-action{border:1px solid rgba(255,255,255,.22);border-radius:8px;background:transparent;color:inherit;cursor:pointer;font-size:11px;padding:2px 7px;white-space:nowrap}
@@ -5559,10 +6093,13 @@ html .player-bar .transport .mms-backdrop-toggle.mms-backdrop-toggle[data-active
    context above it, so a full-height drawer had its header — including the
    "收起" button — painted over by the app's window controls in the top-right
    corner, and the clicks landed on those buttons instead. --mms-drawer-top is
-   measured from the live titlebar; the theme token is only the fallback. */
-.mms-mv-drawer{position:absolute;top:var(--mms-drawer-top,var(--titlebar-height,44px));right:0;bottom:0;z-index:32;display:flex;flex-direction:column;width:min(430px,94%);border-left:1px solid var(--theme-panel-border,#d8dee9);background:rgba(10,13,18,.95);color:var(--theme-text,#eef4fc);font:12px/1.5 -apple-system,system-ui,"Segoe UI",sans-serif;box-shadow:-18px 0 42px rgba(0,0,0,.34);backdrop-filter:blur(12px);-webkit-app-region:no-drag;transform:translateX(102%);transition:transform .26s cubic-bezier(.2,0,.2,1);visibility:hidden}
+   measured from the live titlebar; the theme token is only the fallback.
+   The drawer is docked with the same four --mms-panel-dock-* values the panel
+   uses, so dragging it works identically; only the slide-in stays a transform. */
+.mms-mv-drawer{position:absolute;left:var(--mms-panel-dock-left,auto);right:var(--mms-panel-dock-right,0px);top:var(--mms-panel-dock-top,var(--mms-drawer-top,var(--titlebar-height,44px)));bottom:var(--mms-panel-dock-bottom,10px);z-index:32;display:flex;flex-direction:column;width:min(430px,94%);max-height:calc(100% - 24px);border:1px solid var(--theme-panel-border,#d8dee9);border-radius:14px;background:rgba(10,13,18,.95);color:var(--theme-text,#eef4fc);font:12px/1.5 -apple-system,system-ui,"Segoe UI",sans-serif;box-shadow:-18px 0 42px rgba(0,0,0,.34);backdrop-filter:blur(12px);-webkit-app-region:no-drag;transform:translateX(102%);transition:transform .26s cubic-bezier(.2,0,.2,1);visibility:hidden}
+.mms-mv-drawer[data-dock="left"]{transform:translateX(-102%)}
 .mms-mv-drawer[data-open="true"]{transform:none;visibility:visible}
-.mms-mv-drawer-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;border-bottom:1px solid var(--theme-panel-border,#d8dee9)}
+.mms-mv-drawer-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 14px;border-bottom:1px solid var(--theme-panel-border,#d8dee9);cursor:grab;user-select:none}
 .mms-mv-drawer-title{font-size:13px;font-weight:650}
 .mms-mv-drawer-body{flex:1 1 auto;overflow:auto;padding:10px 12px 26px;overscroll-behavior:contain}
 .mms-mv-drawer-body .mms-background{padding:0}
@@ -5650,6 +6187,8 @@ const installBackdropObserver = () => {
   // A window resize changes the auto-scale ratio.
   const onResize = () => {
     if (backdropEnabled()) applyBackdropStyle();
+    // The lyrics-page panels keep to their edge (and their remembered inset).
+    applyPanelDocks();
   };
   window.addEventListener('resize', onResize);
   if (typeof MutationObserver !== 'function') {
@@ -5694,11 +6233,18 @@ const disposeMvSidebar = external.sidebar?.register({
 });
 
 void (async () => {
+  // The remembered user configuration is laid over the package defaults before
+  // anything is rendered, so the first MV of the session already uses the values
+  // the user chose (see loadInstanceConfig).
+  resolveStoredConfigRead();
   try {
     const status = await waitForBridge();
     if (status?.bridgeError) {
       state.readyError = status.bridgeError;
     }
+    // …and main.cjs gets the same values, so the parts it resolves itself (the MV
+    // request pipeline: quality, frame rate, engine settings) do too.
+    await syncStoredConfigToMain();
     await loadProviders();
     await loadAccounts();
     await loadQrCapabilities();

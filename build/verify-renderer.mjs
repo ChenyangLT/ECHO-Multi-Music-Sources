@@ -125,6 +125,7 @@ class Element {
       this.children.push(child);
     }
     this.childNodes = this.children;
+    this.applyDefaultGeometry();
   }
 
   appendChild(node) { this.append(node); return node; }
@@ -138,6 +139,7 @@ class Element {
     if (index >= 0) this.children.splice(index, 0, child);
     else this.children.push(child);
     this.childNodes = this.children;
+    child.applyDefaultGeometry?.();
     return child;
   }
 
@@ -159,6 +161,104 @@ class Element {
 
   setAttribute(name, value) { this.attributes[name] = String(value); }
   getAttribute(name) { return this.attributes[name] ?? null; }
+
+  /**
+   * A real box for the elements that are positioned against one another.
+   *
+   * Only the lyrics-page panel and settings drawer (and, through them, the page
+   * they are docked to) need one: the placement code measures both, so a shim
+   * that always answered 0 would let a broken position pass. Everything else
+   * measures as empty, exactly like an element with no layout.
+   */
+  getBoundingClientRect() {
+    // An element the model has not sized (`inset:0` overlays, emptied wrappers)
+    // fills the page it sits in, which is what the stylesheet gives it.
+    const ownWidth = Number(this.ownWidth) || 0;
+    const ownHeight = Number(this.ownHeight) || 0;
+    const parentRect = this.parentNode && typeof this.parentNode.getBoundingClientRect === 'function'
+      ? this.parentNode.getBoundingClientRect()
+      : null;
+    const width = ownWidth > 0 || ownHeight > 0 ? ownWidth : (Number(parentRect?.width) || 0);
+    const height = ownWidth > 0 || ownHeight > 0 ? ownHeight : (Number(parentRect?.height) || 0);
+    if (!(width > 0) && !(height > 0)) return { left: 0, top: 0, width: 0, height: 0, right: 0, bottom: 0 };
+    // The two floaters are absolutely positioned by the dock values the mod
+    // writes, so the shim resolves those the same way the stylesheet does — a
+    // drag would otherwise be measured against the element's unpositioned spot.
+    const dockLeft = this.style?.getPropertyValue?.('--mms-panel-dock-left') || '';
+    const dockTop = this.style?.getPropertyValue?.('--mms-panel-dock-top') || '';
+    if (dockLeft && dockTop) {
+      const left = (Number(parentRect?.left) || 0) + (Number.parseFloat(dockLeft) || 0);
+      const top = (Number(parentRect?.top) || 0) + (Number.parseFloat(dockTop) || 0);
+      return { left, top, width, height, right: left + width, bottom: top + height };
+    }
+    let x = Number(this.ownLeft) || 0;
+    let y = Number(this.ownTop) || 0;
+    for (let node = this.parentNode; node; node = node.parentNode) {
+      x += Number(node.ownLeft) || 0;
+      y += Number(node.ownTop) || 0;
+    }
+    return { left: x, top: y, width, height, right: x + width, bottom: y + height };
+  }
+
+  /**
+   * The box an element lays out to, written as its CSS geometry so the model
+   * matches the stylesheet: the two floaters keep their own size, a container
+   * sizes to the children that have one (the song detail page), and everything
+   * else measures as empty.
+   */
+  applyDefaultGeometry() {
+    if (this.classList?.contains('mms-mv-panel')) {
+      this.ownWidth = 460;
+      this.ownHeight = 120;
+      return;
+    }
+    if (this.classList?.contains('mms-mv-drawer')) {
+      this.ownWidth = 430;
+      this.ownHeight = 560;
+      return;
+    }
+    if (this.classList?.contains('lyrics-page')) {
+      // The song detail page fills the window below the titlebar.
+      this.ownWidth = 1200;
+      this.ownHeight = 760;
+      this.ownLeft = 0;
+      this.ownTop = 40;
+      return;
+    }
+    if (this.tagName === 'VIDEO') {
+      const page = typeof this.parentNode?.getBoundingClientRect === 'function'
+        ? this.parentNode.getBoundingClientRect()
+        : { width: 0, height: 0 };
+      this.ownWidth = Number(page.width) || 1200;
+      this.ownHeight = Number(page.height) || 760;
+      return;
+    }
+    // The MV layer fills the page it is injected into (`inset:0`).
+    if (this.classList?.contains('mms-lyrics-bg')) {
+      const parentRect = typeof this.parentNode?.getBoundingClientRect === 'function'
+        ? this.parentNode.getBoundingClientRect()
+        : { width: 0, height: 0 };
+      this.ownWidth = Number(parentRect.width) || 0;
+      this.ownHeight = Number(parentRect.height) || 0;
+      return;
+    }
+    // A container (the body) is as big as the biggest child it holds.
+    let width = 0;
+    let height = 0;
+    for (const child of this.children || []) {
+      const box = typeof child.getBoundingClientRect === 'function' ? child.getBoundingClientRect() : null;
+      width = Math.max(width, Number(box?.width) || 0);
+      height = Math.max(height, Number(box?.height) || 0);
+    }
+    if (width > 0 || height > 0) {
+      this.ownWidth = width;
+      this.ownHeight = height;
+    } else if (this.parentNode && Number(this.parentNode.ownWidth) > 0) {
+      // An unsized child of a sized page (the injected MV layer wrapper) fills it.
+      this.ownWidth = Number(this.parentNode.ownWidth) || 0;
+      this.ownHeight = Number(this.parentNode.ownHeight) || 0;
+    }
+  }
 
   addEventListener(type, handler) {
     if (!this.listeners.has(type)) this.listeners.set(type, []);
@@ -235,6 +335,11 @@ const documentShim = {
 // `contain:paint`, so a z-index:-1 layer would never be visible).
 const lyricsPage = new Element('div');
 lyricsPage.className = 'lyrics-page';
+// The song detail page fills the window below the titlebar, which is the area the
+// lyrics-page MV panel is docked inside.
+lyricsPage.ownWidth = 1200;
+lyricsPage.ownHeight = 760;
+lyricsPage.ownTop = 40;
 const lyricsBackdrop = new Element('div');
 lyricsBackdrop.className = 'lyrics-backdrop';
 lyricsPage.append(lyricsBackdrop);
@@ -349,8 +454,9 @@ const echoExternalMod = {
     mvSearchSuffix: 'MV',
     mvPreferHighestViewCount: true,
     mvImmersiveBackground: true,
-    mvImmersiveBackgroundAutoScale: true,
-    mvImmersiveBackgroundScalePercent: 115,
+    mvImmersiveBackgroundAutoScale: false,
+    mvImmersiveBackgroundFitWidthPinned: true,
+    mvImmersiveBackgroundScalePercent: 100,
     mvImmersiveBackgroundOffsetXPercent: 50,
     mvImmersiveBackgroundOffsetYPercent: 50,
     mvImmersiveBackgroundBlurPx: 0,
@@ -389,7 +495,16 @@ const echoExternalMod = {
     onChange: () => () => {},
   },
   settings: {
-    set: (patch) => { settingsSaves.push(patch); },
+    // The host's per-package store: what the mod writes here is what it reads
+    // back on the next start, which is the whole point of the remembering layer.
+    get: () => JSON.parse(localStorageShim.getItem('echo.external-mod.echo.multi-music-sources') || '{}'),
+    set: (patch) => {
+      settingsSaves.push(patch);
+      const key = 'echo.external-mod.echo.multi-music-sources';
+      const next = { ...JSON.parse(localStorageShim.getItem(key) || '{}'), ...patch };
+      localStorageShim.setItem(key, JSON.stringify(next));
+      return next;
+    },
   },
   toast: (message) => toasts.push(message),
   log: () => {},
@@ -399,18 +514,67 @@ const echoExternalMod = {
 // ---- run mod.js ---------------------------------------------------------
 
 const source = readFileSync(join(packageRoot, 'mod.js'), 'utf8');
+// `window`: the mod also drives direct localStorage writes for its remembered
+// configuration, so the shim carries a tiny store (and a settings API over it).
+// Its listeners are recorded so a test can dispatch `resize` like the browser.
+const localStorageShim = {
+  map: new Map(),
+  getItem(key) { return this.map.has(String(key)) ? this.map.get(String(key)) : null; },
+  setItem(key, value) { this.map.set(String(key), String(value)); },
+  removeItem(key) { this.map.delete(String(key)); },
+};
+// A session that ended with a non-default configuration, so the boot below has
+// something remembered to restore: this is what "restart the software" looks
+// like without a second process. `mvEnabled` is left alone (the MV background is
+// opt-in), and the picture keys are the shipped defaults except the width
+// fitting, which the user turned off.
+localStorageShim.setItem('echo.external-mod.echo.multi-music-sources', JSON.stringify({
+  mvEnabled: true,
+  mvImmersiveBackgroundFitWidthPinned: false,
+  mvImmersiveBackgroundFit: 'contain',
+  mvImmersiveBackgroundScalePercent: 130,
+  mvMaxQuality: '1080p',
+  playlistViewMode: 'compact',
+  mvPanelDockEdge: 'right',
+  mvPanelDockAlign: 'top',
+  mvPanelDockOffset: 0,
+  mvPanelDockCross: 24,
+}));
+const windowListeners = new Map();
+const windowShim = {
+  echo: {},
+  __echoExternalPlayer: null,
+  innerWidth: 1200,
+  innerHeight: 800,
+  open: null,
+  localStorage: localStorageShim,
+  addEventListener(type, handler) {
+    if (!windowListeners.has(type)) windowListeners.set(type, []);
+    windowListeners.get(type).push(handler);
+  },
+  removeEventListener(type, handler) {
+    windowListeners.set(type, (windowListeners.get(type) || []).filter((item) => item !== handler));
+  },
+  dispatch(type, event = {}) {
+    for (const handler of [...(windowListeners.get(type) || [])]) {
+      try {
+        handler({ type, preventDefault() {}, stopPropagation() {}, ...event });
+      } catch (error) {
+        console.error(`[window.${type}]`, error);
+      }
+    }
+  },
+  dispatchEvent(event) { navEvents.push(event); return true; },
+};
 const sandbox = {
   echoExternalMod,
-  window: {
-    echo: {},
-    __echoExternalPlayer: null,
-    innerWidth: 1200,
-    innerHeight: 800,
-    open: null,
-    addEventListener() {},
-    removeEventListener() {},
-    dispatchEvent(event) { navEvents.push(event); return true; },
-  },
+  window: windowShim,
+  // mod.js runs as the body of an injected function, so its `window` is this
+  // context's global: delegate the global listener API to the same registry the
+  // test dispatches through, or a window listener would never fire.
+  addEventListener: windowShim.addEventListener,
+  removeEventListener: windowShim.removeEventListener,
+  dispatch: windowShim.dispatch,
   CustomEvent,
   navigator: { clipboard: { writeText: async () => {} } },
   document: documentShim,
@@ -1682,7 +1846,7 @@ const run = async () => {
   await waitFor(() => calls.some((call) => call.method === 'mvEngineStatus'), 'mvEngineStatus call');
   check(
     'engine settings are pushed into the engine',
-    calls.some((call) => call.method === 'mvSetSettings' && call.payload?.mvImmersiveBackgroundScalePercent === 115),
+    calls.some((call) => call.method === 'mvSetSettings' && call.payload?.mvImmersiveBackgroundScalePercent === 100),
     JSON.stringify(calls.find((call) => call.method === 'mvSetSettings')?.payload || {}).slice(0, 90),
   );
 
@@ -2485,6 +2649,202 @@ const run = async () => {
     navEvents.length === 0 && navToggle.dataset.active === 'true',
     `active=${navToggle.dataset.active} events=${navEvents.map((event) => event.type).join(',') || '(none)'}`,
   );
+
+  // --- remembered configuration (2.0) --------------------------------------
+  // Everything the user picks has to (a) apply to every MV, not just the current
+  // song, and (b) still be there after a restart. Both ride on the same layer:
+  // the change is merged into the live config and written to the host's
+  // per-package store, which is what a fresh session reads back — and this
+  // session booted with a store that already had values in it.
+  const storeKey = 'echo.external-mod.echo.multi-music-sources';
+  const storedNow = () => JSON.parse(localStorageShim.getItem(storeKey) || '{}');
+  const config = echoExternalMod.config;
+
+  // The shipped defaults, for comparison with what the remembered values overrode.
+  const shipped = JSON.parse(readFileSync(join(packageRoot, 'config.json'), 'utf8'));
+  check(
+    'the shipped default picture config is 默认（左右贴合）',
+    shipped.mvImmersiveBackgroundFitWidthPinned === true
+      && shipped.mvImmersiveBackgroundAutoScale === false
+      && shipped.mvImmersiveBackgroundScalePercent === 100,
+    `pinned=${shipped.mvImmersiveBackgroundFitWidthPinned} autoScale=${shipped.mvImmersiveBackgroundAutoScale} scale=${shipped.mvImmersiveBackgroundScalePercent}`,
+  );
+  check(
+    'a remembered configuration is applied over the shipped defaults at boot',
+    config.mvImmersiveBackgroundFitWidthPinned === false
+      && config.mvImmersiveBackgroundFit === 'contain'
+      && config.mvMaxQuality === '1080p'
+      && config.mvEnabled === true,
+    `pinned=${config.mvImmersiveBackgroundFitWidthPinned} fit=${config.mvImmersiveBackgroundFit} quality=${config.mvMaxQuality}`,
+  );
+  // The scale is one of the values the ported MV engine owns: it keeps its own
+  // copy and answers with it, so the number the mod asked for is compared where
+  // the mod hands it over (the boot push) rather than after the engine answered.
+  check(
+    'a value the MV engine owns is handed over with the remembered configuration',
+    calls.some((call) => call.method === 'setSettings'
+      && call.payload?.mvImmersiveBackgroundScalePercent === 130)
+      && Number(storedNow().mvImmersiveBackgroundScalePercent) > 0,
+    `setSettings scale=${calls.find((call) => call.method === 'setSettings')?.payload?.mvImmersiveBackgroundScalePercent} stored=${storedNow().mvImmersiveBackgroundScalePercent}`,
+  );
+  check(
+    'the remembered configuration is pushed to the main process at boot',
+    calls.some((call) => call.method === 'setSettings'
+      && call.payload?.mvImmersiveBackgroundScalePercent === 130
+      && call.payload?.mvMaxQuality === '1080p'),
+    `setSettings calls=${calls.filter((call) => call.method === 'setSettings').length}`,
+  );
+
+  // 「默认（左右贴合）」 on the layer: a `cover`ed picture is scaled so its own width
+  // matches the page, and the height is left to overflow. The picture keys are put
+  // back to the shipped state first, because the boot restored the user's own
+  // choices — which is exactly what the check above is about.
+  config.mvImmersiveBackgroundFitWidthPinned = true;
+  config.mvImmersiveBackgroundFit = 'cover';
+  config.mvImmersiveBackgroundAutoScale = false;
+  config.mvImmersiveBackgroundScalePercent = 100;
+  config.mvImmersiveBackgroundWidthPercent = 100;
+  config.mvImmersiveBackgroundHeightPercent = 100;
+  const mvLayer = lyricsPage.querySelector('.mms-lyrics-bg');
+  const mvVideo = lyricsPage.querySelector('.mms-backdrop-video');
+  check('the MV layer and its video are on the page', Boolean(mvLayer) && Boolean(mvVideo));
+  if (mvLayer && mvVideo) {
+    mvVideo.videoWidth = 1920;
+    mvVideo.videoHeight = 1080;
+    // A resize is what re-applies the style in the app.
+    windowShim.dispatch('resize');
+    await settle(1);
+    // cover fills the height, so the picture would be wider than the page: the
+    // scale pulls its own width back onto both edges. Both measurements come from
+    // the layout the layer actually resolved to.
+    const box = mvLayer.getBoundingClientRect();
+    const expected = (1920 / 1080) / (box.width / box.height);
+    const scale = Number.parseFloat(mvLayer.style.getPropertyValue('--mms-immersive-scale'));
+    check(
+      '默认（左右贴合） scales the picture to the page width exactly',
+      Math.abs(scale - expected) < 0.01
+        && mvLayer.dataset.fitWidth === 'true'
+        && mvLayer.style.getPropertyValue('--mms-immersive-fit') === 'cover'
+        && mvLayer.style.getPropertyValue('--mms-immersive-width') === '100%'
+        && mvLayer.style.getPropertyValue('--mms-immersive-height') === '100%',
+      `scale=${scale} expected=${expected.toFixed(4)} fit=${mvLayer.style.getPropertyValue('--mms-immersive-fit')} fitWidth=${mvLayer.dataset.fitWidth}`,
+    );
+  }
+
+  // The lyrics page is built and torn down as ECHO switches routes, so the panel
+  // is looked up fresh here (an earlier node would already be detached). The
+  // coordinates are reset to the shipped defaults first: this session booted with
+  // a panel the user had dragged to the top-right, which is its own check below.
+  delete config.mvPanelDockEdge;
+  delete config.mvPanelDockAlign;
+  delete config.mvPanelDockOffset;
+  delete config.mvPanelDockCross;
+  await waitFor(() => lyricsPage.parentNode && lyricsPage.querySelector('.mms-mv-panel'), 'MV panel for the placement checks', 8000);
+  windowShim.dispatch('resize');
+  await settle(1);
+  const panel = lyricsPage.querySelector('.mms-mv-panel');
+  check('the MV panel is mounted for the placement checks', Boolean(panel));
+
+  // Its placement: bottom-left, inset a little from both edges, written as the
+  // four dock values the CSS reads (the layer is 1200x760, so "bottom 18px" is
+  // the page height minus the panel height minus the inset).
+  const dockPx = (name) => Number.parseFloat(panel.style.getPropertyValue(name));
+  check(
+    'the MV panel opens at the bottom-left',
+    panel.dataset.dock === 'left' && panel.dataset.align === 'bottom'
+      && dockPx('--mms-panel-dock-left') === 16
+      && dockPx('--mms-panel-dock-right') === 1200 - 460 - 16
+      && dockPx('--mms-panel-dock-top') === 760 - 120 - 18
+      && dockPx('--mms-panel-dock-bottom') === 18,
+    `dock=${panel.dataset.dock}/${panel.dataset.align} l=${panel.style.getPropertyValue('--mms-panel-dock-left')} r=${panel.style.getPropertyValue('--mms-panel-dock-right')} t=${panel.style.getPropertyValue('--mms-panel-dock-top')} b=${panel.style.getPropertyValue('--mms-panel-dock-bottom')}`,
+  );
+  check(
+    'the panel header carries a drag grip',
+    Boolean(panel.querySelector('.mms-panel-grip')) && /\.mms-panel-grip\{/u.test(injectedCss),
+    `grip=${Boolean(panel.querySelector('.mms-panel-grip'))}`,
+  );
+
+  // Dragging the header across and dropping it near an edge pins the panel to
+  // that edge and remembers the corner — the whole point of the feature.
+  const head = panel.querySelector('.mms-mv-panel-head');
+  head.dispatch('pointerdown', { button: 0, clientX: 100, clientY: 700, pointerId: 1 });
+  windowShim.dispatch('pointermove', { clientX: 1100, clientY: 700, pointerId: 1 });
+  windowShim.dispatch('pointerup', { clientX: 1100, clientY: 700, pointerId: 1 });
+  await settle(2);
+  await waitFor(() => storedNow().mvPanelDockEdge === 'right', 'panel position remembered', 4000);
+  check(
+    'dragging the header snaps the panel to the nearest edge',
+    panel.dataset.dock === 'right' && panel.dataset.align === 'bottom'
+      && Number.parseFloat(panel.style.getPropertyValue('--mms-panel-dock-right')) === 0,
+    `dock=${panel.dataset.dock}/${panel.dataset.align} right=${panel.style.getPropertyValue('--mms-panel-dock-right')}`,
+  );
+  check(
+    'the panel position goes into the user store (so a restart keeps it)',
+    storedNow().mvPanelDockEdge === 'right'
+      && storedNow().mvPanelDockAlign === 'bottom'
+      && storedNow().mvPanelDockOffset === 0,
+    `edge=${storedNow().mvPanelDockEdge} align=${storedNow().mvPanelDockAlign} offset=${storedNow().mvPanelDockOffset}`,
+  );
+
+  // The settings drawer is dragged the same way, and starts at the top-right.
+  const drawerOpenButton = panel.querySelectorAll('.mms-mv-panel-action')
+    .find((item) => item.textContent.includes('设置'));
+  drawerOpenButton?.click();
+  await settle(3);
+  const drawer = lyricsPage.querySelector('.mms-mv-drawer');
+  check(
+    'the settings drawer opens on the right and carries a grip',
+    drawer?.dataset.dock === 'right' && drawer?.dataset.align === 'top'
+      && Boolean(drawer.querySelector('.mms-panel-grip')),
+    `dock=${drawer?.dataset.dock}/${drawer?.dataset.align}`,
+  );
+  const drawerBody = drawer?.querySelector('.mms-mv-drawer-body');
+  const presetOptions = drawerBody?.querySelectorAll('select')
+    .find((select) => select.children.some((option) => option.value === 'fitwidth'));
+  check(
+    'the 默认（左右贴合） preset is offered in the picture settings',
+    Boolean(presetOptions)
+      && presetOptions.children.some((option) => option.value === 'fitwidth' && option.textContent.includes('默认')),
+    presetOptions ? presetOptions.children.map((option) => option.value).join(',') : 'no preset select',
+  );
+  const fitControl = drawerBody?.querySelectorAll('select')
+    .find((select) => select.children.some((option) => option.value === 'none'));
+  check(
+    'the fitting control is locked while the width fitting is on',
+    fitControl?.disabled === true,
+    `disabled=${fitControl?.disabled}`,
+  );
+  if (drawer) {
+    const drawerHead = drawer.querySelector('.mms-mv-drawer-head');
+    drawerHead.dispatch('pointerdown', { button: 0, clientX: 900, clientY: 300, pointerId: 2 });
+    windowShim.dispatch('pointermove', { clientX: 100, clientY: 300, pointerId: 2 });
+    windowShim.dispatch('pointerup', { clientX: 100, clientY: 300, pointerId: 2 });
+    await settle(2);
+    await waitFor(() => storedNow().mvDrawerDockEdge === 'left', 'drawer position remembered', 4000);
+    check(
+      'the drawer can be dragged to the other edge and is remembered',
+      drawer.dataset.dock === 'left' && storedNow().mvDrawerDockEdge === 'left',
+      `dock=${drawer.dataset.dock} stored=${storedNow().mvDrawerDockEdge}`,
+    );
+  }
+
+  // Leaving the width fitting switches the layer back to a plain fitting.
+  config.mvImmersiveBackgroundFitWidthPinned = false;
+  config.mvImmersiveBackgroundFit = 'cover';
+  config.mvImmersiveBackgroundAutoScale = false;
+  if (mvLayer && mvVideo) {
+    mvVideo.videoWidth = 1440;
+    mvVideo.videoHeight = 1080;
+    windowShim.dispatch('resize');
+    await settle(1);
+    check(
+      'turning the width fitting off leaves the picture to the chosen fitting',
+      mvLayer.dataset.fitWidth === 'false'
+        && mvLayer.dataset.fit === 'cover'
+        && Number.parseFloat(mvLayer.style.getPropertyValue('--mms-immersive-scale')) === 1,
+      `fitWidth=${mvLayer.dataset.fitWidth} fit=${mvLayer.dataset.fit} scale=${mvLayer.style.getPropertyValue('--mms-immersive-scale')}`,
+    );
+  }
 
   // --- cleanup -------------------------------------------------------------
   await cleanup();

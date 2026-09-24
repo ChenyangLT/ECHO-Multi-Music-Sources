@@ -63,6 +63,12 @@ const MV_SETTING_KEYS = [
   'mvPreferHighestViewCount',
   'mvImmersiveBackground',
   'mvImmersiveBackgroundAutoScale',
+  // The picture fitting keys are the renderer's, but they are mirrored here so a
+  // value chosen once is present on both sides of the RPC from the first render.
+  'mvImmersiveBackgroundFit',
+  'mvImmersiveBackgroundFitWidthPinned',
+  'mvImmersiveBackgroundWidthPercent',
+  'mvImmersiveBackgroundHeightPercent',
   'mvImmersiveBackgroundScalePercent',
   'mvImmersiveBackgroundOffsetXPercent',
   'mvImmersiveBackgroundOffsetYPercent',
@@ -139,7 +145,14 @@ const MV_DEFAULTS = {
   mvPreferHighestViewCount: true,
   mvImmersiveBackground: true,
   mvImmersiveBackgroundAutoScale: true,
-  mvImmersiveBackgroundScalePercent: 115,
+  // 「默认（左右贴合）」: the picture is scaled to exactly the width of the page and
+  // the height is left alone. It ships as the default so a fresh install already
+  // behaves that way, and it is what every MV uses until the user changes it.
+  mvImmersiveBackgroundFit: 'cover',
+  mvImmersiveBackgroundFitWidthPinned: true,
+  mvImmersiveBackgroundWidthPercent: 100,
+  mvImmersiveBackgroundHeightPercent: 100,
+  mvImmersiveBackgroundScalePercent: 100,
   mvImmersiveBackgroundOffsetXPercent: 50,
   mvImmersiveBackgroundOffsetYPercent: 50,
   mvImmersiveBackgroundBlurPx: 0,

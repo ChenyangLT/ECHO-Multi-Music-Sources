@@ -111,7 +111,13 @@
     "mvImmersiveBackgroundAutoScale": {
       "type": "boolean",
       "title": "自动缩放 / Auto scale",
-      "description": "按画面比例自动放大视频以填满窗口，避免出现黑边；开启时填充方式固定为「窄边（完整显示）」。",
+      "description": "按画面比例自动放大视频以填满窗口，避免出现黑边；开启时填充方式固定为「窄边（完整显示）」。默认关闭，因为「默认（左右贴合）」已经保证左右两侧贴边。",
+      "default": false
+    },
+    "mvImmersiveBackgroundFitWidthPinned": {
+      "type": "boolean",
+      "title": "左右贴合（默认画面）/ Fit the picture to the full width",
+      "description": "开启后画面被缩放到左右两侧恰好贴住窗口宽度，并随窗口自适应；高度不做限制，画面比窗口高时会超出上下边界。这就是「默认（左右贴合）」画面预设。",
       "default": true
     },
     "mvImmersiveBackgroundFit": {
@@ -143,7 +149,7 @@
       "description": "歌词页里按 Ctrl + 滚轮也可以缩放。",
       "minimum": 70,
       "maximum": 220,
-      "default": 115
+      "default": 100
     },
     "mvImmersiveBackgroundOffsetXPercent": {
       "type": "integer",
@@ -241,6 +247,61 @@
       "description": "engine：背景 MV 由社区版 MV 引擎解析成视频流直接播放（与社区版一致，不下载、不缓存）；progressive：只用 B 站完整 MP4（引擎解析失败时的回退方式）。",
       "enum": ["engine", "progressive"],
       "default": "engine"
+    },
+    "mvPanelDockEdge": {
+      "type": "string",
+      "title": "MV 面板贴边 / MV panel edge",
+      "description": "歌词页 MV 面板停在左侧还是右侧（拖动面板标题栏即可改变，位置会被记住）。",
+      "enum": ["left", "right"],
+      "default": "left"
+    },
+    "mvPanelDockAlign": {
+      "type": "string",
+      "title": "MV 面板上下 / MV panel vertical",
+      "enum": ["top", "bottom"],
+      "default": "bottom"
+    },
+    "mvPanelDockOffset": {
+      "type": "integer",
+      "title": "MV 面板水平内缩 / MV panel horizontal inset",
+      "description": "面板距所贴那一侧的内缩像素值，0 表示紧贴边缘。",
+      "minimum": 0,
+      "maximum": 4000,
+      "default": 16
+    },
+    "mvPanelDockCross": {
+      "type": "integer",
+      "title": "MV 面板垂直内缩 / MV panel vertical inset",
+      "minimum": 0,
+      "maximum": 4000,
+      "default": 18
+    },
+    "mvDrawerDockEdge": {
+      "type": "string",
+      "title": "设置抽屉贴边 / Settings drawer edge",
+      "description": "歌词页 MV 背景设置抽屉停在左侧还是右侧（拖动抽屉标题栏即可改变，位置会被记住）。",
+      "enum": ["left", "right"],
+      "default": "right"
+    },
+    "mvDrawerDockAlign": {
+      "type": "string",
+      "title": "设置抽屉上下 / Settings drawer vertical",
+      "enum": ["top", "bottom"],
+      "default": "top"
+    },
+    "mvDrawerDockOffset": {
+      "type": "integer",
+      "title": "设置抽屉水平内缩 / Settings drawer horizontal inset",
+      "minimum": 0,
+      "maximum": 4000,
+      "default": 0
+    },
+    "mvDrawerDockCross": {
+      "type": "integer",
+      "title": "设置抽屉垂直内缩 / Settings drawer vertical inset",
+      "minimum": 0,
+      "maximum": 4000,
+      "default": 8
     },
     "tidalClientId": {
       "type": "string",

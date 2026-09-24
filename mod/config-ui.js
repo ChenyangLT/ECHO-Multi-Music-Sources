@@ -34,8 +34,10 @@ const text = locale === 'zh-CN'
       enableBackground: '启用 MV 背景',
       enableBackgroundHint: '默认关闭，播放栏右侧的 MV 按钮与此同步（打开时点亮）。打开后点进歌曲详情页（歌词页）就会在歌词后面显示匹配到的 B 站 MV；在主界面点该按钮会直接进入详情页。',
       immersive: '沉浸式 MV 背景',
+      fitWidthPinned: '左右贴合（默认画面）',
+      fitWidthPinnedHint: '把画面缩放到左右两侧恰好贴住窗口宽度，并随窗口自适应；高度不做限制，画面比窗口高时会超出上下边界。这就是画面预设里的「默认（左右贴合）」。',
       autoScale: '自动缩放',
-      autoScaleHint: '按画面比例自动放大视频，避免出现黑边（开启时填充方式固定为「窄边」）。',
+      autoScaleHint: '按画面比例自动放大视频以填满窗口，避免出现黑边（开启时填充方式固定为「窄边」）。默认关闭，因为「左右贴合」已经保证左右两侧贴边。',
       fit: '填充方式',
       fitCover: '铺满（裁切）',
       fitContain: '窄边（完整）',
@@ -117,8 +119,10 @@ const text = locale === 'zh-CN'
       enableBackground: 'Enable MV background',
       enableBackgroundHint: 'Off by default; the player-bar MV button mirrors this and lights up while it is on. Once enabled, opening the song detail page shows the matched Bilibili MV behind the lyrics, and pressing that button on the main page goes straight to the detail page.',
       immersive: 'Immersive MV background',
+      fitWidthPinned: 'Fit the picture to the full width',
+      fitWidthPinnedHint: 'Scales the picture so it is exactly as wide as the window and keeps up with resizing; the height is left alone, so a taller picture runs past the top and bottom edges. This is the "Default (fits left & right)" picture preset.',
       autoScale: 'Auto scale',
-      autoScaleHint: 'Scales the video to the window aspect so no letterbox remains (forces the letterbox fitting).',
+      autoScaleHint: 'Scales the video to the window aspect so no letterbox remains (forces the letterbox fitting). Off by default, because the width fitting already lines up both sides.',
       fit: 'Fitting',
       fitCover: 'Fill (crop)',
       fitContain: 'Letterbox',
@@ -426,6 +430,7 @@ background.append(toggleField('mvEnabled', text.enableBackground, text.enableBac
 const immersiveGrid = el('div', 'mmsc-grid');
 immersiveGrid.append(
   toggleField('mvImmersiveBackground', text.immersive),
+  toggleField('mvImmersiveBackgroundFitWidthPinned', text.fitWidthPinned, text.fitWidthPinnedHint, { strict: true }),
   toggleField('mvImmersiveBackgroundAutoScale', text.autoScale, text.autoScaleHint),
   selectField('mvImmersiveBackgroundFit', text.fit, [
     { value: 'cover', label: text.fitCover },
@@ -451,11 +456,12 @@ reset.type = 'button';
 reset.addEventListener('click', () => {
   Object.assign(draft, {
     mvImmersiveBackground: true,
-    mvImmersiveBackgroundAutoScale: true,
+    mvImmersiveBackgroundFitWidthPinned: true,
+    mvImmersiveBackgroundAutoScale: false,
     mvImmersiveBackgroundFit: 'cover',
     mvImmersiveBackgroundWidthPercent: 100,
     mvImmersiveBackgroundHeightPercent: 100,
-    mvImmersiveBackgroundScalePercent: 115,
+    mvImmersiveBackgroundScalePercent: 100,
     mvImmersiveBackgroundOffsetXPercent: 50,
     mvImmersiveBackgroundOffsetYPercent: 50,
     mvImmersiveBackgroundBlurPx: 0,
