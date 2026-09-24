@@ -193,12 +193,18 @@ class Element {
     }
     if (this.classList?.contains('mms-mv-panel')) {
       const left = (Number(parentRect?.left) || 0) + 16;
-      const bottom = (Number(parentRect?.top) || 0) + (Number(parentRect?.height) || 0) - 18;
+      // `bottom: calc(var(--mms-chrome-bottom,0px) + 18px)` against the page.
+      const chromeRaw = documentShim.documentElement.style.getPropertyValue('--mms-chrome-bottom');
+      const chrome = Number.parseFloat(chromeRaw) || 0;
+      const bottom = (Number(parentRect?.top) || 0) + (Number(parentRect?.height) || 0) - chrome - 18;
       return { left, top: bottom - height, width, height, right: left + width, bottom };
     }
     if (this.classList?.contains('mms-mv-drawer')) {
       const right = (Number(parentRect?.left) || 0) + (Number(parentRect?.width) || 0);
-      return { left: right - width, top: 0, width, height, right, bottom: height };
+      const chromeRaw = documentShim.documentElement.style.getPropertyValue('--mms-chrome-bottom');
+      const chrome = Number.parseFloat(chromeRaw) || 0;
+      const bottom = (Number(parentRect?.top) || 0) + (Number(parentRect?.height) || 0) - chrome - 10;
+      return { left: right - width, top: bottom - height, width, height, right, bottom };
     }
     let x = Number(this.ownLeft) || 0;
     let y = Number(this.ownTop) || 0;
@@ -330,6 +336,9 @@ const documentShim = {
   createElement: (tag) => new Element(tag),
   head: new Element('head'),
   body: new Element('body'),
+  // `documentElement` is where the mod writes the measured chrome heights (the
+  // player bar's room), so the shim keeps one with a real style declaration.
+  documentElement: new Element('html'),
   // Delegate real queries to the body so the page can find ECHO's DOM.
   querySelector: (selector) => documentShim.body.querySelector(selector),
   querySelectorAll: (selector) => documentShim.body.querySelectorAll(selector),
@@ -360,7 +369,19 @@ transportBar.append(lyricsButton);
 const transportShell = new Element('div');
 transportShell.className = 'player-transport-shell';
 transportShell.append(transportBar);
-documentShim.body.append(lyricsPage, transportShell);
+// The real app paints `.player-bar` (its own stacking context, z-index 12) above
+// `.lyrics-page` (z-index 1), which is what covered the bottom-left of the MV
+// panel. The fixture carries the bar so the panel can be measured against it.
+const playerBar = new Element('footer');
+playerBar.className = 'player-bar';
+playerBar.ownWidth = 1200;
+playerBar.ownHeight = 88;
+const playerBarShell = new Element('div');
+playerBarShell.className = 'player-bar-shell';
+playerBarShell.ownWidth = 1200;
+playerBarShell.ownHeight = 88;
+playerBarShell.append(playerBar);
+documentShim.body.append(lyricsPage, transportShell, playerBarShell);
 
 // ---- loader SDK stub ----------------------------------------------------
 
@@ -2735,13 +2756,25 @@ const run = async () => {
 
   // There is no drag and nothing to remember any more: the panel is pinned to the
   // bottom-left of the page by the stylesheet, and the drawer slides in from the
-  // right edge.
+  // right edge. Both stop above the measured player bar, which is the stacking
+  // context that used to cover their lowest controls.
+  const BAR_H = 88;
   check(
-    'the MV panel is pinned to the bottom-left by the stylesheet',
-    /\.mms-mv-panel\{position:absolute;left:16px;bottom:18px/u.test(injectedCss)
+    'the MV panel is pinned to the bottom-left, above the player bar',
+    /\.mms-mv-panel\{position:absolute;left:16px;bottom:calc\(var\(--mms-chrome-bottom,0px\) \+ 18px\)/u.test(injectedCss)
       && panel.getBoundingClientRect().left === 16
-      && panel.getBoundingClientRect().bottom === 760 + 40 - 18,
-    `rect=${JSON.stringify(panel.getBoundingClientRect())}`,
+      && panel.getBoundingClientRect().bottom === 800 - BAR_H - 18,
+    `rect=${JSON.stringify(panel.getBoundingClientRect())} measure=${documentShim.documentElement.ownHeight ? 'yes' : 'no'}`,
+  );
+  check(
+    'the player bar room is measured into the CSS variable the panel uses',
+    documentShim.documentElement.style.getPropertyValue('--mms-chrome-bottom') === `${BAR_H}px`,
+    `--mms-chrome-bottom=${documentShim.documentElement.style.getPropertyValue('--mms-chrome-bottom')}`,
+  );
+  check(
+    'the player bar is mounted alongside the page it can cover (the reason for the offset)',
+    documentShim.body.children.includes(playerBarShell),
+    `children=${documentShim.body.children.map((child) => child.className).join('|')}`,
   );
   check(
     'neither floater carries a drag handle any more',

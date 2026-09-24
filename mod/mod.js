@@ -2227,6 +2227,8 @@ const ensureBackdropPanel = () => {
   if (anchor?.nextSibling) page.insertBefore(panel, anchor.nextSibling);
   else page.append(panel);
   backdrop.panel = panel;
+  // The panel is anchored above the player bar (see syncBottomChrome).
+  syncBottomChrome();
   renderBackdropPanelBody();
   return panel;
 };
@@ -2235,17 +2237,22 @@ const ensureBackdropPanel = () => {
  * Keeps the settings drawer clear of ECHO's titlebar.
  *
  * The window controls live in the app titlebar, which is its own stacking
- * context painted above the page surface; measuring it is the only reliable way
- * to know how far down the drawer has to start (fullscreen hides it, themes
- * change its height).
+ * context painted above the page surface — and the drawer is anchored to the
+ * page, which sits a few pixels above the viewport. Measuring the titlebar is the
+ * only reliable way to know where the drawer has to start (fullscreen hides it,
+ * themes change its height), and the offset of the page against the viewport has
+ * to be added to it: without that the drawer's own header ended up a couple of
+ * pixels under the window controls and its buttons were covered.
  */
+const DRAWER_TOP_MARGIN_PX = 10;
+
 const syncDrawerTop = () => {
   const drawer = backdrop.drawer;
   if (!drawer?.style?.setProperty) return;
 
   let top = 0;
-  const bar = document.querySelector ? document.querySelector('.app-titlebar') : null;
-  const rect = typeof bar?.getBoundingClientRect === 'function' ? bar.getBoundingClientRect() : null;
+  const titlebar = document.querySelector ? document.querySelector('.app-titlebar') : null;
+  const rect = typeof titlebar?.getBoundingClientRect === 'function' ? titlebar.getBoundingClientRect() : null;
   if (rect && Number(rect.height) > 0 && Number(rect.bottom) > 0) {
     top = Math.ceil(Number(rect.bottom));
   }
@@ -2261,7 +2268,58 @@ const syncDrawerTop = () => {
       /* the token is optional */
     }
   }
-  drawer.style.setProperty('--mms-drawer-top', `${top > 0 ? top : 44}px`);
+  if (!(top > 0)) top = 44;
+
+  // The page the drawer is positioned against starts a little below the
+  // viewport's top edge, so the titlebar's own bottom has to be shifted by that
+  // much before it means anything inside the page.
+  let pageOffset = 0;
+  const page = lyricsPage();
+  const pageRect = typeof page?.getBoundingClientRect === 'function' ? page.getBoundingClientRect() : null;
+  if (pageRect && Number(pageRect.top) > 0) pageOffset = Number(pageRect.top);
+  drawer.style.setProperty('--mms-drawer-top', `${Math.ceil(top + pageOffset + DRAWER_TOP_MARGIN_PX)}px`);
+};
+
+/**
+ * Measures the player bar into a CSS variable the panel and the drawer keep clear of.
+ *
+ * Both float inside `.lyrics-page`, which is a stacking context of its own
+ * (`z-index: 1`) sitting BELOW the player bar (`z-index: 12`) — that order has to
+ * stay, or the transport controls would be buried under the lyrics page. An
+ * absolutely positioned child cannot paint above its own stacking context, so the
+ * only reliable way to keep a bottom-anchored panel clickable is to stop it from
+ * reaching under the bar: `bottom: calc(bar + inset)`. The bar's height changes
+ * with the layout (window width, mini-player, fullscreen), so it is measured
+ * rather than hard-coded.
+ */
+const syncBottomChrome = () => {
+  const root = document?.documentElement;
+  if (!root?.style?.setProperty) return;
+  if (!document.querySelector) return;
+
+  const bar = document.querySelector('.player-bar');
+  const rect = typeof bar?.getBoundingClientRect === 'function' ? bar.getBoundingClientRect() : null;
+  const viewport = Number(window.innerHeight) || 0;
+  let height = 0;
+  if (bar) {
+    let hidden = false;
+    try {
+      const style = typeof getComputedStyle === 'function' ? getComputedStyle(bar) : null;
+      hidden = style?.display === 'none' || style?.visibility === 'hidden';
+    } catch {
+      /* a host without getComputedStyle is treated as visible */
+    }
+    if (!hidden) {
+      const measured = Number(rect?.height) || 0;
+      const bottom = Number(rect?.bottom) || 0;
+      if (measured > 0) height = Math.ceil(measured);
+      // Laid out but not measured: whatever room is left under it is its own.
+      else if (bottom > 0 && viewport > 0) height = Math.max(0, Math.ceil(viewport - bottom));
+    }
+  }
+  // A host that renders no player bar at all (or one that is hidden) needs no
+  // room reserved, so the floaters fall back to their plain bottom inset.
+  root.style.setProperty('--mms-chrome-bottom', `${Math.max(0, height)}px`);
 };
 
 /**
@@ -2289,6 +2347,8 @@ const ensureBackdropDrawer = () => {
   page.append(drawer);
   backdrop.drawer = drawer;
   syncDrawerTop();
+  // The drawer is anchored above the player bar too (see syncBottomChrome).
+  syncBottomChrome();
   return drawer;
 };
 
@@ -2296,6 +2356,7 @@ const openBackdropDrawer = () => {
   const drawer = ensureBackdropDrawer();
   if (!drawer) return;
   syncDrawerTop();
+  syncBottomChrome();
   // Ask for the engine state on open: a session that never visited the sidebar
   // 背景设置 page has no account information yet, and the drawer's account card
   // (and its 刷新状态 button) needs it right away.
@@ -5785,9 +5846,12 @@ html .player-bar .transport .mms-backdrop-toggle.mms-backdrop-toggle[data-active
 .mms-bg-offset-value{min-width:4.2em;text-align:center;font-variant-numeric:tabular-nums;color:var(--theme-muted-text,#64748b);font-size:11px}
 /* Lyrics-page MV panel: the actions ECHO-main's MvPanel exposes, on the lyrics page.
    It sits at the bottom-left of the page, fixed — there is nothing to drag or to
-   remember. The whole header toggles the body and the ⚙ (optional, see
-   mvShowSettingsButton) opens the full settings drawer. */
-.mms-mv-panel{position:absolute;left:16px;bottom:18px;z-index:24;display:flex;flex-direction:column;gap:6px;max-width:min(460px,64%);padding:8px 10px;border:1px solid var(--theme-panel-border,#d8dee9);border-radius:12px;background:rgba(12,16,22,.82);color:#eef4fc;font:12px/1.4 -apple-system,system-ui,"Segoe UI",sans-serif;backdrop-filter:blur(6px)}
+   remember — and stops ABOVE the player bar: the page is a stacking context of its
+   own that paints below .player-bar, so a child anchored 18px off the page bottom
+   had its lower half covered by the transport (and was unclickable there). The
+   bar's measured height lives in --mms-chrome-bottom. The whole header toggles the
+   body and the ⚙ (optional, see mvShowSettingsButton) opens the settings drawer. */
+.mms-mv-panel{position:absolute;left:16px;bottom:calc(var(--mms-chrome-bottom,0px) + 18px);z-index:24;display:flex;flex-direction:column;gap:6px;max-width:min(460px,64%);padding:8px 10px;border:1px solid var(--theme-panel-border,#d8dee9);border-radius:12px;background:rgba(12,16,22,.82);color:#eef4fc;font:12px/1.4 -apple-system,system-ui,"Segoe UI",sans-serif;backdrop-filter:blur(6px)}
 .mms-mv-panel-head{display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none}
 .mms-mv-panel-head-actions{flex:1 1 auto}
 .mms-mv-panel-title{font-weight:600;font-size:11px;letter-spacing:.02em;text-transform:uppercase;opacity:.85;white-space:nowrap}
@@ -5806,9 +5870,11 @@ html .player-bar .transport .mms-backdrop-toggle.mms-backdrop-toggle[data-active
    context above it, so a full-height drawer had its header — including the
    "收起" button — painted over by the app's window controls in the top-right
    corner, and the clicks landed on those buttons instead. --mms-drawer-top is
-   measured from the live titlebar; the theme token is only the fallback.
+   measured from the live titlebar; the theme token is only the fallback, and the
+   same applies to the player bar at the bottom (--mms-chrome-bottom), so the
+   drawer's lowest controls stay clickable.
    It is anchored to the right edge and slides in from there (transform only). */
-.mms-mv-drawer{position:absolute;right:0;top:var(--mms-drawer-top,var(--titlebar-height,44px));bottom:10px;z-index:32;display:flex;flex-direction:column;width:min(430px,94%);max-height:calc(100% - 24px);border:1px solid var(--theme-panel-border,#d8dee9);border-radius:14px 0 0 14px;background:rgba(10,13,18,.95);color:var(--theme-text,#eef4fc);font:12px/1.5 -apple-system,system-ui,"Segoe UI",sans-serif;box-shadow:-18px 0 42px rgba(0,0,0,.34);backdrop-filter:blur(12px);-webkit-app-region:no-drag;transform:translateX(102%);transition:transform .26s cubic-bezier(.2,0,.2,1);visibility:hidden}
+.mms-mv-drawer{position:absolute;right:0;top:var(--mms-drawer-top,var(--titlebar-height,44px));bottom:calc(var(--mms-chrome-bottom,0px) + 10px);z-index:32;display:flex;flex-direction:column;width:min(430px,94%);max-height:calc(100% - 24px);border:1px solid var(--theme-panel-border,#d8dee9);border-radius:14px 0 0 14px;background:rgba(10,13,18,.95);color:var(--theme-text,#eef4fc);font:12px/1.5 -apple-system,system-ui,"Segoe UI",sans-serif;box-shadow:-18px 0 42px rgba(0,0,0,.34);backdrop-filter:blur(12px);-webkit-app-region:no-drag;transform:translateX(102%);transition:transform .26s cubic-bezier(.2,0,.2,1);visibility:hidden}
 .mms-mv-drawer[data-open="true"]{transform:none;visibility:visible}
 .mms-mv-drawer-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 14px;border-bottom:1px solid var(--theme-panel-border,#d8dee9)}
 .mms-mv-drawer-title{font-size:13px;font-weight:650}
@@ -5866,6 +5932,9 @@ const applyBackdropMode = () => {
   }
   ensureBackdrop();
   ensureBackdropStatus();
+  // The panel/drawer are anchored above the player bar, so its room is measured
+  // before they are placed.
+  syncBottomChrome();
   ensureBackdropPanel();
   ensureBackdropDrawer();
   applyBackdropStyle();
@@ -5895,9 +5964,11 @@ const installBackdropObserver = () => {
     if (entered) void pollBackdrop();
   };
   refresh();
-  // A window resize changes the auto-scale ratio.
+  // A window resize changes the auto-scale ratio and the room the player bar
+  // takes at the bottom of the page.
   const onResize = () => {
     if (backdropEnabled()) applyBackdropStyle();
+    syncBottomChrome();
   };
   window.addEventListener('resize', onResize);
   if (typeof MutationObserver !== 'function') {
