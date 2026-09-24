@@ -174,6 +174,15 @@ const STRINGS = {
     loadingCandidates: '正在获取候选…',
     candidatesFor: (title) => `当前歌曲：${title}`,
     candidatesEmpty: '还没有候选：点上面的「为当前歌曲匹配候选」，或直接在下面粘贴视频链接。',
+    titleSearchLabel: '按标题搜索 B 站',
+    titleSearchHint: '用这里输入的标题直接搜 B 站，不经过「歌名 + 艺人 +」这套自动查询；结果可以像其它候选一样绑定到当前歌曲。',
+    titleSearchPlaceholder: '输入要搜索的标题，回车即可',
+    titleSearchPlaceholderTrack: (title) => `默认用歌名：${title}`,
+    titleSearchAction: '搜索',
+    titleSearching: '按标题搜索中…',
+    titleSearchEmpty: '请输入要搜索的标题',
+    titleSearchFound: (n) => `找到 ${n} 个候选`,
+    titleSearchShown: (query, n) => `「${query}」的搜索结果（${n} 个）`,
     candidatesShown: (count) => `候选 ${count} 个（可在下面调整数量）`,
     candidateCount: '候选数量',
     candidateCountHint: '自动匹配取前几个结果，也决定候选列表显示多少个（2–20）。',
@@ -423,6 +432,15 @@ const STRINGS = {
     loadingCandidates: 'Loading candidates…',
     candidatesFor: (title) => `Current song: ${title}`,
     candidatesEmpty: 'No candidates yet: use "Find candidates for the current song" above, or paste a video link below.',
+    titleSearchLabel: 'Search Bilibili by title',
+    titleSearchHint: 'Searches Bilibili with exactly this title instead of the automatic "song + artist + suffix" query; a result can be bound to the current song like any other candidate.',
+    titleSearchPlaceholder: 'Type a title and press Enter',
+    titleSearchPlaceholderTrack: (title) => `Defaults to the song title: ${title}`,
+    titleSearchAction: 'Search',
+    titleSearching: 'Searching by title…',
+    titleSearchEmpty: 'Type a title to search for',
+    titleSearchFound: (n) => `${n} candidate(s) found`,
+    titleSearchShown: (query, n) => `Results for "${query}" (${n})`,
     candidatesShown: (count) => `${count} candidate(s) — adjust the count below`,
     candidateCount: 'Candidate count',
     candidateCountHint: 'How many search results auto-matching and the list below use (2–20).',
@@ -697,6 +715,8 @@ const state = {
   // Background page: the community MV engine's state and the last match test.
   backgroundTest: null,
   backgroundTestFor: null,
+  // The manual Bilibili search by title (the settings page's own query).
+  titleSearch: null,
   // The signed-in account's own playlists / favourite folders (歌单 view).
   playlists: null,
   // NetEase 每日推荐: previewed as a group on the 歌单 page, opened as a detail.
@@ -5147,6 +5167,91 @@ const mergedBackdropCandidates = () => {
   return [...byBvid.values()];
 };
 
+/**
+ * A Bilibili search by a title the user typed, independent of the playing song.
+ *
+ * The automatic match derives its query from the song (title + artist + suffix),
+ * which is wrong surprisingly often for covers, live versions, and songs whose
+ * title is not the video's. This searches exactly what was typed and lets the
+ * result be bound to the current song like any other candidate.
+ */
+const searchBackdropByTitle = async (rawQuery) => {
+  const query = String(rawQuery || '').trim();
+  if (!query) {
+    reportNotice(copy.titleSearchEmpty);
+    return;
+  }
+  const track = state.lastTrack;
+  const limit = Math.max(backgroundConfig().candidateLimit, 8);
+  state.busy = copy.titleSearching;
+  renderSoon();
+  try {
+    let candidates = [];
+    if (track) {
+      // The engine searches for the current song but with the typed query, so its
+      // scoring, quality handling and persistence stay in play.
+      const snapshot = await invokeMain('mvSearchNetworkCandidatesForSnapshot', {
+        ...snapshotRequestFor(track, query),
+        query,
+      }).catch(() => null);
+      const list = Array.isArray(snapshot) ? snapshot : (snapshot?.candidates || []);
+      candidates = list.slice(0, limit);
+      if (candidates.length) state.mvCandidates = { trackId: String(trackKey(track)), candidates };
+    }
+    if (!candidates.length) {
+      // No playing track (or the engine had nothing): a plain name search.
+      const payload = await invokeMain('findMvCandidates', { title: query, query, limit, mode: 'first' }).catch(() => null);
+      const list = Array.isArray(payload) ? payload : (payload?.candidates || []);
+      candidates = list.slice(0, limit);
+    }
+    state.titleSearch = { for: track ? String(trackKey(track)) : '', query, result: { query, candidates } };
+    if (!candidates.length) reportNotice(copy.testNoMatch);
+    else reportNotice(copy.titleSearchFound(candidates.length));
+  } catch (error) {
+    reportError(error);
+  } finally {
+    state.busy = null;
+    renderSoon();
+    refreshBackgroundPage({ force: true });
+  }
+};
+
+/** One candidate row: cover, title/uploader/score, and its actions. */
+const renderCandidateRow = (candidate, marks = {}) => {
+  const row = h('div', 'mms-bg-candidate');
+  const bvid = candidate.bvid || bvidOf(candidate.id);
+  if (bvid && marks.chosenBvid && bvid === marks.chosenBvid) row.dataset.chosen = 'true';
+  if (bvid && marks.boundBvid && bvid === marks.boundBvid) row.dataset.current = 'true';
+  else if (bvid && marks.selectedBvid && bvid === marks.selectedBvid) row.dataset.current = 'true';
+  const main = h('div', 'mms-bg-candidate-main');
+  main.append(
+    h('strong', null, candidate.title || '—'),
+    h('small', 'mms-muted', [
+      candidate.uploader || '',
+      candidate.duration ? formatDuration(candidate.duration) : candidate.durationSeconds ? formatDuration(candidate.durationSeconds) : '',
+      Number.isFinite(Number(candidate.viewCount)) && Number(candidate.viewCount) > 0 ? formatCount(candidate.viewCount) : '',
+      Number.isFinite(Number(candidate.score)) && candidate.score !== null ? `匹配度 ${(Number(candidate.score) * 100).toFixed(0)}%` : '',
+      (candidate.reasons || []).slice(0, 2).join(' / '),
+    ].filter(Boolean).join(' · ')),
+  );
+  const actions = h('div', 'mms-account-actions');
+  actions.append(
+    button('mms-primary', copy.candidateApply, () => void applyVideoForTrack(candidateUrlOf(candidate), candidate.title)),
+  );
+  if (bvid) actions.append(button('mms-ghost', copy.preview, () => void previewBackgroundCandidate(candidate)));
+  if (candidate.url) {
+    actions.append(button('mms-ghost', copy.engineOpen, () => {
+      try {
+        window.open(candidate.url, '_blank');
+      } catch {
+        /* ignore */
+      }
+    }));
+  }
+  row.append(candidateCover(candidate), main, actions);
+  return row;
+};
+
 const renderBackgroundSettings = ({ masterSwitch = false } = {}) => {
   const wrap = h('div', 'mms-background');
   const settings = backgroundConfig();
@@ -5223,6 +5328,34 @@ const renderBackgroundSettings = ({ masterSwitch = false } = {}) => {
   testActions.append(button('mms-primary', copy.testMatch, () => void loadBackdropCandidates(state.lastTrack, {})));
   matchSection.append(testActions);
 
+  // Search Bilibili by a title the user types, instead of the song-derived query.
+  const searchValue = state.titleSearch?.query || (state.lastTrack?.title || '');
+  const titleInput = h('input', 'mms-search-input');
+  titleInput.type = 'text';
+  titleInput.placeholder = state.lastTrack?.title ? copy.titleSearchPlaceholderTrack(state.lastTrack.title) : copy.titleSearchPlaceholder;
+  titleInput.value = searchValue;
+  titleInput.setAttribute('aria-label', copy.titleSearchLabel);
+  const runTitleSearch = () => void searchBackdropByTitle(titleInput.value);
+  titleInput.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      runTitleSearch();
+    }
+  });
+  const searchRow = h('div', 'mms-bg-offset');
+  searchRow.append(titleInput, button('mms-primary', copy.titleSearchAction, runTitleSearch));
+  matchSection.append(bgRow(copy.titleSearchLabel, searchRow, copy.titleSearchHint));
+  if (state.titleSearch?.result) {
+    const found = state.titleSearch.result.candidates || [];
+    matchSection.append(h('p', 'mms-muted', copy.titleSearchShown(state.titleSearch.result.query, found.length)));
+    const titleList = h('div', 'mms-bg-candidates');
+    for (const candidate of found.slice(0, Math.max(settings.candidateLimit, 8))) {
+      titleList.append(renderCandidateRow(candidate, { selectedBvid: bvidOf(state.mvSelected?.sourceId) }));
+    }
+    if (!titleList.children.length) titleList.append(h('p', 'mms-muted', copy.testNoMatch));
+    matchSection.append(titleList);
+  }
+
   // Candidates for the playing track: clicking one remembers it for that song and
   // switches the background to it (seeked to the current song position). One list,
   // merged from the name search and the engine's scored search (see
@@ -5238,38 +5371,7 @@ const renderBackgroundSettings = ({ masterSwitch = false } = {}) => {
     const boundBvid = bound ? bvidOf(bound.providerUrl || bound.url) : '';
     const selectedBvid = bvidOf(state.mvSelected?.sourceId);
     for (const candidate of mergedCandidates.slice(0, Math.max(settings.candidateLimit, 8))) {
-      const row = h('div', 'mms-bg-candidate');
-      const bvid = candidate.bvid || bvidOf(candidate.id);
-      if (bvid && chosenBvid && bvid === chosenBvid) row.dataset.chosen = 'true';
-      if (bvid && boundBvid && bvid === boundBvid) row.dataset.current = 'true';
-      else if (bvid && selectedBvid && bvid === selectedBvid) row.dataset.current = 'true';
-      const main = h('div', 'mms-bg-candidate-main');
-      main.append(
-        h('strong', null, candidate.title || '—'),
-        h('small', 'mms-muted', [
-          candidate.uploader || '',
-          candidate.duration ? formatDuration(candidate.duration) : candidate.durationSeconds ? formatDuration(candidate.durationSeconds) : '',
-          Number.isFinite(Number(candidate.viewCount)) && Number(candidate.viewCount) > 0 ? formatCount(candidate.viewCount) : '',
-          Number.isFinite(Number(candidate.score)) && candidate.score !== null ? `匹配度 ${(Number(candidate.score) * 100).toFixed(0)}%` : '',
-          (candidate.reasons || []).slice(0, 2).join(' / '),
-        ].filter(Boolean).join(' · ')),
-      );
-      const actions = h('div', 'mms-account-actions');
-      actions.append(
-        button('mms-primary', copy.candidateApply, () => void applyVideoForTrack(candidateUrlOf(candidate), candidate.title)),
-      );
-      if (bvid) actions.append(button('mms-ghost', copy.preview, () => void previewBackgroundCandidate(candidate)));
-      if (candidate.url) {
-        actions.append(button('mms-ghost', copy.engineOpen, () => {
-          try {
-            window.open(candidate.url, '_blank');
-          } catch {
-            /* ignore */
-          }
-        }));
-      }
-      row.append(candidateCover(candidate), main, actions);
-      list.append(row);
+      list.append(renderCandidateRow(candidate, { chosenBvid, boundBvid, selectedBvid }));
     }
     if (!list.children.length) list.append(h('p', 'mms-muted', copy.testNoMatch));
     matchSection.append(list);
@@ -5759,11 +5861,18 @@ const render = () => {
 const backgroundPageSignature = () => [
   backdropEnabled() ? 'on' : 'off',
   backdrop.state,
+  // The song that is playing: without it the page (and with it 当前歌曲 / 候选歌曲)
+  // kept showing the previous track after a song change.
+  state.lastTrack ? String(trackKey(state.lastTrack)) : '',
+  state.lastTrack?.title || '',
   state.mvEngine?.ready ? `ready:${state.mvEngine.tracks ?? 0}` : 'missing',
   state.mvSelected?.id || '',
   Number(state.mvOffset) || 0,
   state.backgroundTest?.track?.id || '',
   mergedBackdropCandidates().length,
+  state.titleSearch?.for || '',
+  state.titleSearch?.query || '',
+  (state.titleSearch?.result?.candidates || []).length,
   (state.mvVariants?.variants || []).length,
   state.busy || '',
 ].join('|');

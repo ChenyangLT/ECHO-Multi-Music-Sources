@@ -2960,6 +2960,45 @@ const run = async () => {
     );
   }
 
+  // --- the settings page keeps up with the playing song (and title search) --
+  // 当前歌曲 / 候选歌曲 have to follow the track that is playing, and the page now
+  // carries its own Bilibili search by an explicit title.
+  {
+    // The 「MV 背景」 sidebar page has its own shell; re-rendering it is what a track
+    // change plus a poll tick does in the app.
+    const liveRoot = new Element('div');
+    mvPage.render(liveRoot, { toast: (message) => toasts.push(message), echo: {}, config: echoExternalMod.config });
+    await settle(3);
+    const matchText = () => liveRoot.allText();
+    check(
+      'the settings page follows the song that is playing now',
+      matchText().includes('下一首歌'),
+      matchText().slice(0, 90),
+    );
+    const titleInput = liveRoot.querySelectorAll('.mms-search-input')
+      .find((input) => String(input.placeholder || '').includes('歌名') || String(input.placeholder || '').includes('标题'));
+    check('the settings page offers a title search', Boolean(titleInput), titleInput?.placeholder);
+    if (titleInput) {
+      const searchesBefore = calls.filter((call) => call.method === 'mvSearchNetworkCandidatesForSnapshot').length;
+      titleInput.value = '自定义标题';
+      titleInput.dispatch('keydown', { key: 'Enter' });
+      await settle(4);
+      const searchCall = calls.filter((call) => call.method === 'mvSearchNetworkCandidatesForSnapshot').pop();
+      check(
+        'the typed title is what reaches the search',
+        calls.filter((call) => call.method === 'mvSearchNetworkCandidatesForSnapshot').length > searchesBefore
+          && searchCall?.payload?.query === '自定义标题',
+        `query=${searchCall?.payload?.query}`,
+      );
+      await waitFor(() => matchText().includes('自定义标题'), 'title search results rendered', 6000);
+      check(
+        'the title search results are listed on the page',
+        matchText().includes('自定义标题') && liveRoot.querySelectorAll('.mms-bg-candidates').length >= 1,
+        `${liveRoot.querySelectorAll('.mms-bg-candidates').length} list(s)`,
+      );
+    }
+  }
+
   // --- cleanup -------------------------------------------------------------
   await cleanup();
   await settle(1);
