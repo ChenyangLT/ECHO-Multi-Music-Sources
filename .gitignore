@@ -14,7 +14,6 @@ dist/
 # Scratch space used by the build/verification scripts
 work/
 build/work/
-tools/loader-installer/build/
 
 # Local tooling artefacts (DeepSeek Harness vision router)
 .dsh-vision-router/
@@ -28,8 +27,11 @@ ECHO-main/
 # this repository — get them from https://github.com/ChunchunOwO/ShinawaseLoader
 reference/
 
-# Porting notes and host internals: kept locally, not published.
+# Porting notes, host internals and the local one-click installer: these are
+# development material for this machine, not part of the published plugin.
 docs/DEVELOPMENT.md
+tools/loader-installer/
+tools/fix-loader-ports.ps1
 
 # Downloaded archives (e.g. ShinawaseLoader-main.zip) are not part of the mod
 *.zip
