@@ -4,7 +4,7 @@
 
 一个音乐播放器**插件**：把 9 个在线音乐平台接进播放器，搜索、播放、歌单、歌词、MV 背景全在一个侧栏页面里。
 
-[![Version](https://img.shields.io/badge/version-2.0.3-7c5cff?style=flat-square)](https://github.com/ChenyangLT/ECHO-Multi-Music-Sources/releases)
+[![Version](https://img.shields.io/badge/version-2.0.4-7c5cff?style=flat-square)](https://github.com/ChenyangLT/ECHO-Multi-Music-Sources/releases)
 [![License](https://img.shields.io/badge/license-LGPL--3.0-7c5cff?style=flat-square)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%20%2F%2011%20x64-22c55e?style=flat-square)]()
 
@@ -22,6 +22,7 @@
 - **账号**：每个平台粘贴 Cookie 或扫码登录，登录后可播放更高音质与会员曲目。
 - **音质选择**：可选音质，失败自动降级。
 - **MV 背景**（默认关闭）：在歌曲详情页用歌曲名匹配在线 MV，作为歌词页背景并跟随歌曲进度播放；不下载、不缓存、不占磁盘。
+- **匹配按相关度打分**：候选会先按歌名与艺人打分，**低于匹配度阈值的一律不用**（宁可这一首没有 MV，也不在不相干的视频上放）；播放量只在同分时作为参考。默认「按匹配度评分」，可在画面设置里换成「按搜索顺序」或「按播放量」。
 - **MV 设置面板**：固定在歌词页左下角，点标题栏展开或收起；面板上的 `⚙ 设置` 从右侧打开完整设置抽屉。
   这个 `⚙` 按钮可以在画面设置里关掉（`歌词页显示「⚙ 设置」按钮`），关掉后侧栏 `🎬 MV 背景` 页和播放栏的 MV 按钮照旧。
 - **自动纠正**：切歌、进入歌曲详情页、点播放栏 MV 按钮都会**重新匹配并对齐到当前播放进度**，所以换歌之后画面不会停在上一首的 MV 上。
@@ -48,7 +49,7 @@
 ## 安装
 
 1. 到 [**Releases**](https://github.com/ChenyangLT/ECHO-Multi-Music-Sources/releases/latest) 下载
-   **`echo.multi-music-sources-2.0.3.echomod`**；
+   **`echo.multi-music-sources-2.0.4.echomod`**；
 2. 把它拖进模组加载器的 Mods 页面，或直接放进加载器的 `Mods/` 目录；
 3. 在加载器里**启用「ECHO 多平台音源」**，然后重启软件；
 4. 左侧边栏会出现 **♫ 多平台音源** 与 **🎬 MV 背景** 两个页面。
@@ -135,6 +136,8 @@ playlists, lyrics and an optional MV background, all on one sidebar page.
 TIDAL, Qobuz); search, queue and streaming playback with per-platform quality; an account
 **playlists / favourites** page with **link import** and opt-in local saving; QR sign-in; and an
 opt-in **MV background** on the song page that follows the music (streamed, never downloaded).
+Candidates are **scored against the song's title and artist and filtered by a match threshold**, so an
+irrelevant video is left out rather than shown; view count only breaks ties.
 
 The MV panel is pinned to the bottom-left of the song page; its `⚙ settings` button opens the full
 settings drawer from the right edge, and that button can be switched off from the picture settings.
@@ -147,7 +150,7 @@ and survives a restart. The default picture is **“Default (fits left & right)�
 scaled to exactly the width of the window and follows resizing, with the height left free.
 
 **Requirements** — Windows 10/11 x64 and [ShinawaseLoader](https://github.com/ChunchunOwO/ShinawaseLoader)
-1.6.7+ (tested with 1.7.2). Grab `echo.multi-music-sources-2.0.3.echomod` from
+1.6.7+ (tested with 1.7.2). Grab `echo.multi-music-sources-2.0.4.echomod` from
 [**Releases**](https://github.com/ChenyangLT/ECHO-Multi-Music-Sources/releases/latest), drop it into
 the loader's Mods page, enable it and restart.
 

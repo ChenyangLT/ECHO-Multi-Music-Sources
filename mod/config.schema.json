@@ -229,9 +229,9 @@
     "mvMatchMode": {
       "type": "string",
       "title": "MV 匹配方式 / MV match mode",
-      "description": "first：直接用「歌曲名」在 B 站搜索的第一个视频（推荐）；score：按匹配度评分；views：按播放量。",
+      "description": "score：按匹配度评分（默认，推荐）；first：按 B 站搜索顺序取第一个达标的；views：达标候选里取播放量最高的。三种方式都会先按「匹配度阈值」筛掉不相关的候选。",
       "enum": ["first", "score", "views"],
-      "default": "first"
+      "default": "score"
     },
     "mvCandidateLimit": {
       "type": "integer",

@@ -170,7 +170,10 @@ const MV_DEFAULTS = {
   mvAllow60fps: true,
   // Background video pipeline: the video is resolved by the community MV engine
   // and streamed through this process (no download step).
-  mvMatchMode: 'first',
+  // `score` by default: every candidate list is scored by the renderer (see
+  // scoreCandidateList in mod.js) and filtered by the threshold, so the ranking
+  // decides instead of Bilibili's raw result order.
+  mvMatchMode: 'score',
   mvSourceMode: 'engine',
 };
 

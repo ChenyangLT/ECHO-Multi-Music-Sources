@@ -315,7 +315,7 @@ if (typeof saveHandler === 'function') {
   check('save returns the draft', Boolean(next) && typeof next === 'object');
   check(
     'save preserves the background keys',
-    next?.mvMatchMode === 'first' && next?.mvSourceMode === 'engine' && next?.mvDownloaderPath === undefined,
+    next?.mvMatchMode === 'score' && next?.mvSourceMode === 'engine' && next?.mvDownloaderPath === undefined,
     JSON.stringify({ match: next?.mvMatchMode, source: next?.mvSourceMode, downloader: next?.mvDownloaderPath }),
   );
 } else {

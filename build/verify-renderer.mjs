@@ -891,7 +891,9 @@ const run = async () => {
   mainResponses.findMvCandidates = {
     ok: true,
     result: [
-      { id: 'bilibili:BVTEST1', title: '晴天 MV', uploader: 'uploader', url: 'https://www.bilibili.com/video/BVTEST1', thumbnailUrl: null, viewCount: 1000, score: 0.9, reasons: [] },
+      // The same video the engine's scored search returns below: the background
+      // picks it by name first and then resolves it through the community service.
+      { id: 'cand-1', title: '晴天 周杰伦 MV', uploader: 'uploader', url: 'https://www.bilibili.com/video/BVTEST1', thumbnailUrl: null, viewCount: 1000, durationSeconds: 269, reasons: [] },
     ],
   };
   let mvResolves = 0;
@@ -906,7 +908,7 @@ const run = async () => {
     result: [
       {
         id: 'cand-1',
-        title: '晴天 MV',
+        title: '晴天 周杰伦 MV',
         uploader: 'uploader',
         url: 'https://www.bilibili.com/video/BVTEST1',
         providerUrl: 'https://www.bilibili.com/video/BVTEST1',
@@ -1608,11 +1610,15 @@ const run = async () => {
   }
 
   // Candidates + custom link: the settings page is where a wrong match is fixed.
+  // The scores here are recomputed by the mod (it always judges a candidate
+  // itself), so the fixtures carry real song tokens like Bilibili would.
   mainResponses.findMvCandidates = {
     ok: true,
     result: [
-      { id: 'BVFIRST', title: '晴天 MV 第一个结果', uploader: 'UP 主', url: 'https://www.bilibili.com/video/BVFIRST', duration: 269, viewCount: null, score: null },
-      { id: 'BVSECOND', title: '晴天 第二个结果', uploader: '另一个 UP', url: 'https://www.bilibili.com/video/BVSECOND', duration: 240, viewCount: 99999, score: 0.5 },
+      // Two different videos, as a real search returns: the settings page shows the
+      // whole list, while the automatic match takes the best-scoring eligible one.
+      { id: 'BVFIRST', title: '晴天 周杰伦 官方 MV', uploader: 'UP 主', url: 'https://www.bilibili.com/video/BVFIRST', duration: 269, viewCount: 9_000_000 },
+      { id: 'BVSECOND', title: '晴天 周杰伦 翻唱', uploader: '另一个 UP', url: 'https://www.bilibili.com/video/BVSECOND', duration: 240, viewCount: 120_000 },
     ],
   };
   const boundVideo = (payload, id = 'bound-1') => ({
@@ -1623,7 +1629,7 @@ const run = async () => {
       provider: 'bilibili',
       sourceType: 'manual',
       title: '晴天 官方 MV',
-      providerUrl: payload?.url ?? 'https://www.bilibili.com/video/BVFIRST',
+      providerUrl: payload?.url ?? 'https://www.bilibili.com/video/BVTEST1',
       selectedQualityId: 'auto',
       offsetMs: 0,
       playableInApp: true,
@@ -1659,12 +1665,18 @@ const run = async () => {
   check('background page offers the candidate search', Boolean(testMatchButton));
   if (testMatchButton) {
     testMatchButton.click();
-    await waitFor(() => pageRoot.allText().includes('晴天 MV 第一个结果'), 'candidate results');
+    await waitFor(() => pageRoot.allText().includes('晴天 周杰伦 官方 MV'), 'candidate results');
     const candidates = pageRoot.querySelectorAll('.mms-bg-candidate');
-    check('the candidate list shows the search results', candidates.length >= 2, `${candidates.length} candidates`);
-    check('the first result is the chosen one', candidates[0]?.dataset.chosen === 'true' && candidates[0]?.allText().includes('第一个结果'));
+    check('the candidate list shows the search results', candidates.length >= 2, `${candidates.length} candidates — ${candidates.map((row) => row.allText().slice(0, 40)).join(' || ')}`);
+    check(
+      'the manual search lists every hit and marks the chosen one',
+      candidates.length >= 2
+        && candidates[0]?.dataset.chosen === 'true'
+        && candidates[0]?.allText().includes('晴天 周杰伦 官方 MV'),
+      candidates.map((row) => `${row.dataset.chosen ? '★' : '·'}${row.allText().slice(0, 24)}`).join(' || '),
+    );
 
-    const chosenRow = pageRoot.querySelectorAll('.mms-bg-candidate').find((row) => row.allText().includes('第一个结果'));
+    const chosenRow = pageRoot.querySelectorAll('.mms-bg-candidate').find((row) => row.allText().includes('晴天 周杰伦 官方 MV'));
     const applyCandidate = chosenRow?.querySelectorAll('.mms-primary').find((item) => item.textContent === '用这个');
     const previewCandidate = chosenRow?.querySelectorAll('.mms-ghost').find((item) => item.textContent === '预览');
     check('candidate rows offer apply + preview', Boolean(applyCandidate) && Boolean(previewCandidate), chosenRow?.allText().slice(0, 80) || 'no chosen row');
@@ -1866,8 +1878,8 @@ const run = async () => {
   mainResponses.mvSearchNetworkCandidatesForSnapshot = {
     ok: true,
     result: [
-      { id: 'bilibili:BVENGINE1', title: '晴天 官方 MV', uploader: '官方', url: 'https://www.bilibili.com/video/BVENGINE1', score: 0.93, viewCount: 12_000_000, durationSeconds: 269, reasons: ['标题完全匹配', '播放量高'] },
-      { id: 'bilibili:BVENGINE2', title: '晴天 翻唱', uploader: 'UP', url: 'https://www.bilibili.com/video/BVENGINE2', score: 0.61, viewCount: 2000, durationSeconds: 240, reasons: ['标题部分匹配'] },
+      { id: 'bilibili:BVENGINE1', title: '晴天 周杰伦 官方修复版', uploader: '官方', url: 'https://www.bilibili.com/video/BVENGINE1', score: 0.93, viewCount: 12_000_000, durationSeconds: 269, reasons: ['标题完全匹配', '播放量高'] },
+      { id: 'bilibili:BVENGINE2', title: '晴天 周杰伦 翻唱', uploader: 'UP', url: 'https://www.bilibili.com/video/BVENGINE2', score: 0.61, viewCount: 2000, durationSeconds: 240, reasons: ['标题部分匹配'] },
     ],
   };
   mainResponses.mvGetTemporaryPlayableForSnapshot = {
@@ -1932,7 +1944,9 @@ const run = async () => {
     check('the engine search runs for the current track', calls.filter((call) => call.method === 'mvSearchNetworkCandidatesForSnapshot').length > searchesBefore);
     await waitFor(() => pageRoot.allText().includes('标题完全匹配'), 'engine candidates');
     const engineText = pageRoot.allText();
-    check('engine candidates show score and reasons', engineText.includes('匹配度 93%') && engineText.includes('标题完全匹配'), engineText.slice(0, 120));
+    // The score shown is the mod's own (it always judges a candidate itself), so
+    // the fixture's provider score is not what the row displays.
+    check('engine candidates show score and reasons', /匹配度 \d+%/.test(engineText) && engineText.includes('标题完全匹配'), engineText.slice(0, 120));
     // The engine's scored candidates and the mod's name search are the same
     // Bilibili query: they used to be rendered as two separate lists ("why are
     // there two candidate boxes?"). They are merged into one now.
@@ -1941,7 +1955,7 @@ const run = async () => {
       pageRoot.querySelectorAll('.mms-bg-candidates').length === 1,
       `${pageRoot.querySelectorAll('.mms-bg-candidates').length} list(s)`,
     );
-    const engineRow = pageRoot.querySelectorAll('.mms-bg-candidate').find((row) => row.allText().includes('匹配度 93%'));
+    const engineRow = pageRoot.querySelectorAll('.mms-bg-candidate').find((row) => row.allText().includes('官方修复版'));
     const engineApplyButton = engineRow?.querySelectorAll('.mms-primary').find((item) => item.textContent === '用这个');
     check('engine candidates can be applied', Boolean(engineApplyButton), engineRow?.allText().slice(0, 80) || 'no engine row');
     if (engineApplyButton) {
@@ -2142,13 +2156,13 @@ const run = async () => {
   mainResponses.findMvCandidates = {
     ok: true,
     result: [
-      { id: 'BVRETRY', title: '需要重试的歌 MV', uploader: 'UP', url: 'https://www.bilibili.com/video/BVRETRY', duration: 200, viewCount: 10, score: 0.9 },
+      { id: 'BVRETRY', title: '需要重试的歌 艺人 MV', uploader: 'UP', url: 'https://www.bilibili.com/video/BVRETRY', duration: 200, viewCount: 10 },
     ],
   };
   mainResponses.mvSearchNetworkCandidatesForSnapshot = {
     ok: true,
     result: [
-      { id: 'cand-retry', title: '需要重试的歌 MV', uploader: 'UP', url: 'https://www.bilibili.com/video/BVRETRY', providerUrl: 'https://www.bilibili.com/video/BVRETRY', score: 0.9, viewCount: 10, durationSeconds: 200, reasons: [] },
+      { id: 'cand-retry', title: '需要重试的歌 艺人 MV', uploader: 'UP', url: 'https://www.bilibili.com/video/BVRETRY', providerUrl: 'https://www.bilibili.com/video/BVRETRY', viewCount: 10, durationSeconds: 200, reasons: [] },
     ],
   };
   mainResponses.mvSelectVideo = {
@@ -2203,11 +2217,11 @@ const run = async () => {
   };
   mainResponses.findMvCandidates = {
     ok: true,
-    result: [{ id: 'BVSTALL', title: '卡住的歌 MV', uploader: 'UP', url: 'https://www.bilibili.com/video/BVSTALL', duration: 200, viewCount: 10, score: 0.9 }],
+    result: [{ id: 'BVSTALL', title: '卡住的歌 艺人 MV', uploader: 'UP', url: 'https://www.bilibili.com/video/BVSTALL', duration: 200, viewCount: 10 }],
   };
   mainResponses.mvSearchNetworkCandidatesForSnapshot = {
     ok: true,
-    result: [{ id: 'cand-stall', title: '卡住的歌 MV', uploader: 'UP', url: 'https://www.bilibili.com/video/BVSTALL', providerUrl: 'https://www.bilibili.com/video/BVSTALL', score: 0.9, viewCount: 10, durationSeconds: 200, reasons: [] }],
+    result: [{ id: 'cand-stall', title: '卡住的歌 艺人 MV', uploader: 'UP', url: 'https://www.bilibili.com/video/BVSTALL', providerUrl: 'https://www.bilibili.com/video/BVSTALL', viewCount: 10, durationSeconds: 200, reasons: [] }],
   };
   mainResponses.mvSelectVideo = {
     ok: true,
@@ -2368,11 +2382,11 @@ const run = async () => {
   mainResponses.mvGetSelected = { ok: true, result: null };
   mainResponses.findMvCandidates = {
     ok: true,
-    result: [{ id: 'BVOFFSET', title: '偏移的歌 MV', uploader: 'UP', url: 'https://www.bilibili.com/video/BVOFFSET', duration: 200, viewCount: 10, score: 0.9 }],
+    result: [{ id: 'BVOFFSET', title: '偏移的歌 艺人 MV', uploader: 'UP', url: 'https://www.bilibili.com/video/BVOFFSET', duration: 200, viewCount: 10 }],
   };
   mainResponses.mvSearchNetworkCandidatesForSnapshot = {
     ok: true,
-    result: [{ id: 'cand-offset', title: '偏移的歌 MV', uploader: 'UP', url: 'https://www.bilibili.com/video/BVOFFSET', providerUrl: 'https://www.bilibili.com/video/BVOFFSET', score: 0.9, viewCount: 10, durationSeconds: 200, reasons: [] }],
+    result: [{ id: 'cand-offset', title: '偏移的歌 艺人 MV', uploader: 'UP', url: 'https://www.bilibili.com/video/BVOFFSET', providerUrl: 'https://www.bilibili.com/video/BVOFFSET', viewCount: 10, durationSeconds: 200, reasons: [] }],
   };
   mainResponses.mvSelectVideo = {
     ok: true,
@@ -2494,7 +2508,7 @@ const run = async () => {
   mainResponses.mvGetSelected = { ok: true, result: null };
   mainResponses.mvSearchNetworkCandidatesForSnapshot = {
     ok: true,
-    result: [{ id: 'cand-notice', title: '通知的歌 MV', uploader: 'UP', url: 'https://www.bilibili.com/video/BVNOTICE', providerUrl: 'https://www.bilibili.com/video/BVNOTICE', score: 0.9, viewCount: 10, durationSeconds: 200, reasons: [] }],
+    result: [{ id: 'cand-notice', title: '通知的歌 艺人 MV', uploader: 'UP', url: 'https://www.bilibili.com/video/BVNOTICE', providerUrl: 'https://www.bilibili.com/video/BVNOTICE', viewCount: 10, durationSeconds: 200, reasons: [] }],
   };
   mainResponses.mvSelectVideo = {
     ok: true,
@@ -2918,7 +2932,11 @@ const run = async () => {
     });
     mainResponses.findMvCandidates = {
       ok: true,
-      result: [{ id: 'BVNEXT', title: '下一首歌 MV', uploader: 'UP', url: 'https://www.bilibili.com/video/BVNEXT', duration: 260, viewCount: 1000, score: 0.9 }],
+      result: [{ id: 'BVNEXT', title: '下一首歌 另一个艺人 MV', uploader: 'UP', url: 'https://www.bilibili.com/video/BVNEXT', duration: 260, viewCount: 1000 }],
+    };
+    mainResponses.mvSearchNetworkCandidatesForSnapshot = {
+      ok: true,
+      result: [{ id: 'cand-next', title: '下一首歌 另一个艺人 MV', uploader: 'UP', url: 'https://www.bilibili.com/video/BVNEXT', providerUrl: 'https://www.bilibili.com/video/BVNEXT', viewCount: 1000, durationSeconds: 260, reasons: [] }],
     };
     // The engine answers with the NEXT song's video, so the layer really has to
     // swap: the same URL would prove nothing.
@@ -2950,7 +2968,7 @@ const run = async () => {
     const newSrc = String(lyricsPage.querySelector('.mms-backdrop-video')?.src || '');
     check(
       'the previous song\'s video is dropped and replaced',
-      newSrc.length > 0 && newSrc !== oldSrc && newSrc.includes('video-next'),
+      newSrc.length > 0 && newSrc !== oldSrc && (newSrc.includes('video-next') || newSrc.includes('next-progressive')),
       `src=${newSrc.slice(-40)}`,
     );
     check(
@@ -2997,6 +3015,94 @@ const run = async () => {
         `${liveRoot.querySelectorAll('.mms-bg-candidates').length} list(s)`,
       );
     }
+  }
+
+  // --- candidate scoring: a real spread, and every mode honours the threshold --
+  // The community scorer mapped everything onto 0.45…0.87 and only reached its top
+  // tier when a title literally contained the whole query, so the ranking was
+  // decided by search order / view count instead of by relevance. The mod now
+  // scores every candidate itself (scoreCandidateList) before any ranking.
+  {
+    const fixtureCandidates = [
+      { id: 'bilibili:BVGOOD', title: '晴天 周杰伦 官方 MV', uploader: 'JVR Music', viewCount: 8_600_000 },
+      { id: 'bilibili:BVPOP', title: '【钢琴】晴天', uploader: '某UP', viewCount: 32_000_000 },
+      { id: 'bilibili:BVTUT', title: '《晴天》吉他教学', uploader: '吉他课', viewCount: 1_200_000 },
+    ];
+    config.mvMatchMode = 'score';
+    config.mvPreferHighestViewCount = true;
+    mainResponses.findMvCandidates = { ok: true, result: fixtureCandidates };
+    // The playing song has to be the song these fixtures are about.
+    player.status = async () => ({
+      state: 'playing',
+      currentTrackId: 'streaming:netease:1',
+      positionSeconds: 30,
+      durationSeconds: 269,
+      currentTrack: { id: 'streaming:netease:1', stableKey: 'streaming:netease:1', mediaType: 'streaming', provider: 'netease', providerTrackId: '1', title: '晴天', artist: '周杰伦', duration: 269 },
+    });
+    await settle(3);
+    const scorePageRoot = new Element('div');
+    mvPage.render(scorePageRoot, { toast: (message) => toasts.push(message), echo: {}, config: echoExternalMod.config });
+    await settle(2);
+    // Ask the page to match the current song: that is what runs the mod's scorer
+    // over the name-search candidates.
+    const spreadSearchButton = scorePageRoot.querySelectorAll('.mms-primary')
+      .find((item) => item.textContent.includes('为当前歌曲匹配候选'));
+    spreadSearchButton?.click();
+    await settle(5);
+    // The page is a sidebar page of its own: in the app the loader re-renders it,
+    // which is what makes the freshly scored rows appear.
+    mvPage.render(scorePageRoot, { toast: (message) => toasts.push(message), echo: {}, config: echoExternalMod.config });
+    await settle(1);
+    const rowsNow = scorePageRoot.querySelectorAll('.mms-bg-candidate').map((row) => ({
+      text: row.allText(),
+      score: Number((/匹配度 (\d+)%/.exec(row.allText() || '') || [])[1] ?? NaN),
+    }));
+    check(
+      'the official upload outranks the more viewed cover',
+      rowsNow.some((row) => row.text.includes('官方 MV'))
+        && rowsNow.some((row) => row.text.includes('钢琴'))
+        && rowsNow.find((row) => row.text.includes('官方 MV')).score > rowsNow.find((row) => row.text.includes('钢琴')).score,
+      rowsNow.map((row) => `${row.score}% ${row.text.slice(0, 22)}`).join(' | '),
+    );
+    check(
+      'the tutorial is discounted by the scorer',
+      rowsNow.every((row) => !row.text.includes('吉他教学') || row.score < 70),
+      rowsNow.filter((row) => row.text.includes('吉他教学')).map((row) => `${row.score}%`).join(',') || '(not listed)',
+    );
+    config.mvMatchMode = 'views';
+    const viewsPageRoot = new Element('div');
+    mvPage.render(viewsPageRoot, { toast: (message) => toasts.push(message), echo: {}, config: echoExternalMod.config });
+    await settle(2);
+    viewsPageRoot.querySelectorAll('.mms-primary')
+      .find((item) => item.textContent.includes('为当前歌曲匹配候选'))?.click();
+    await settle(5);
+    mvPage.render(viewsPageRoot, { toast: (message) => toasts.push(message), echo: {}, config: echoExternalMod.config });
+    await settle(1);
+    const tutorialRow = viewsPageRoot.querySelectorAll('.mms-bg-candidate')
+      .find((item) => item.allText().includes('吉他教学'));
+    const tutorialScore = Number((/匹配度 (\d+)%/.exec(tutorialRow?.allText() || '') || [])[1] ?? 0);
+    check(
+      'views mode still filters by the threshold (a viral cover cannot win)',
+      tutorialRow === undefined || tutorialScore < 70,
+      `tutorial=${tutorialScore}%`,
+    );
+    config.mvMatchMode = 'score';
+    config.mvPreferHighestViewCount = false;
+  }
+
+  // --- a track without a title is never searched for -------------------------
+  // `backdropQueryFor` used to fall through to the bare suffix, i.e. a search for
+  // "MV", which matches some unrelated popular video.
+  {
+    const searchesBefore = calls.filter((call) => call.method === 'findMvCandidates').length;
+    player.status = async () => ({ state: 'playing', currentTrackId: 'streaming:netease:404' });
+    await settle(4);
+    const searches = calls.filter((call) => call.method === 'findMvCandidates').slice(searchesBefore);
+    check(
+      'a track with no title is not searched for at all',
+      !searches.some((call) => String(call.payload?.query || '').trim() === 'MV'),
+      JSON.stringify(searches.map((call) => call.payload?.query || call.payload?.title)),
+    );
   }
 
   // --- cleanup -------------------------------------------------------------

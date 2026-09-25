@@ -137,6 +137,8 @@ const STRINGS = {
     backdropRetrying: '视频流没有开始播放，正在重试…',
     backdropResolvingFor: (title) => `正在解析：${title}`,
     backdropNoStream: '社区 MV 引擎没有解析出可播放的视频流',
+    backdropNoTitle: '这首歌还没有歌名，等播放器给出曲目信息后再匹配 MV',
+    backdropNoCandidate: '没有匹配度达标的 MV 候选（可在设置里降低匹配度阈值，或用「按标题搜索 B 站」手动绑定）',
     backdropShortSource: '该视频流只包含几秒内容（B 站分段流），已改用完整 MP4',
     backdropDragHint: '拖动可调整画面位置，Ctrl + 滚轮缩放',
     backgroundAttribution: (title) => `背景 MV：${title}`,
@@ -395,6 +397,8 @@ const STRINGS = {
     backdropRetrying: 'The stream did not start playing — retrying…',
     backdropResolvingFor: (title) => `Resolving: ${title}`,
     backdropNoStream: 'The community MV engine resolved no playable stream',
+    backdropNoTitle: 'This track has no title yet — the MV is matched once the player reports its metadata',
+    backdropNoCandidate: 'No candidate cleared the match threshold (lower it in the settings, or bind one with "Search Bilibili by title")',
     backdropShortSource: 'That stream only holds a few seconds (a Bilibili segment); switching to the complete MP4',
     backdropDragHint: 'Drag to reposition, Ctrl + wheel to zoom',
     backgroundAttribution: (title) => `Background MV: ${title}`,
@@ -1790,7 +1794,9 @@ const backgroundConfig = () => {
     candidateLimit: Math.round(clampNumber(config.mvCandidateLimit, 2, 20, 8)),
     // Background video pipeline: the community MV engine picks the variant, the
     // main process streams it (same as ECHO-main's echo-mv:// handler).
-    matchMode: ['first', 'score', 'views'].includes(config.mvMatchMode) ? config.mvMatchMode : 'first',
+    // `score` is the default: the ranking decides, and every mode still filters by
+    // the threshold above (see chooseBackdropCandidate).
+    matchMode: ['first', 'score', 'views'].includes(config.mvMatchMode) ? config.mvMatchMode : 'score',
     sourceMode: ['engine', 'progressive'].includes(config.mvSourceMode) ? config.mvSourceMode : 'engine',
   };
 };
@@ -1903,6 +1909,14 @@ const backdrop = {
   // matches the playing track is stale and has to be re-matched — that is what
   // made the previous song's MV keep playing after a track change.
   matchedFor: null,
+  // The track a candidate search belongs to. A late answer for another track is
+  // dropped instead of being adopted (see setBackdropCandidates).
+  searchOwner: null,
+  // The candidate this round picked, and the eligible runners-up: a pick that
+  // turns out to be unplayable fails over to the next one instead of falling
+  // straight through to the progressive fallback.
+  chosen: null,
+  alternatives: [],
   // Tracks this session played, so the current track can be identified from the
   // player's status without re-reading ECHO's queue shape.
   known: new Map(),
@@ -2731,38 +2745,251 @@ const stopBackdrop = (state = 'idle') => {
   setBackdropMessage(state);
 };
 
+// ---------------------------------------------------------------------------
+// Candidate scoring
+// ---------------------------------------------------------------------------
+//
+// The community build's `scoreSearchTitle` maps "how much of the query the title
+// contains" onto a very narrow band (0.45 … 0.87) and only reaches its top tier
+// when the title literally contains the whole query — which almost never happens,
+// because real titles insert words between the song and the artist. Measured on a
+// real query, four completely different videos (official MV, piano cover, live,
+// 4K restoration) all scored 0.87, so the ranking degenerated into "whatever
+// Bilibili returned first / whatever has the most views".
+//
+// This scorer replaces that judgement for every candidate list the mod consumes
+// (its own name search AND the community engine's search), so the mod's threshold
+// and ranking finally describe the same numbers:
+//
+//   * an exact token match counts fully, a mere substring only 0.8;
+//   * the phrase ("all query tokens adjacent, in order") earns a bonus, which is
+//     what separates an official upload from a cover that merely mentions both;
+//   * negative keywords (cover / 钢琴 / 教学 / live / 合集 …) discount the result
+//     instead of being ignored;
+//   * the uploader is searched too, so an official channel still scores when the
+//     title is just the song name.
+//
+// The result spreads over ~0.2 … 0.97, which is what makes a threshold meaningful.
+
+const MV_STOP_WORDS = new Set(['mv', 'pv', 'official', 'music', 'video', 'full', 'ver', 'version']);
+const MV_SOURCE_WORDS = ['official music video', 'official mv', 'music video', 'official', 'mv', 'pv', 'video', 'hd', 'hq', '1080p', '720p', '4k', 'lyrics', 'lyric'];
+const MV_PENALTY_RE = /(翻唱|翻弹|翻调|钢琴|吉他|尤克里里|教学|教程|演奏|纯音乐|伴奏|清唱|混音|remix|cover|instrumental|karaoke|off\s*vocal|合集|合辑|剪辑|切片|片段|直播|录播|reaction|shorts|铃声|串烧|半小时|一小时)/iu;
+const MV_BOOST_RE = /(官方|原版|正版|official|高清|无损|hi\s*res|4k|hd)/iu;
+
+/** The handful of HTML entities Bilibili titles actually contain. */
+const decodeHtmlEntities = (value) => String(value ?? '')
+  .replace(/&amp;/gu, '&')
+  .replace(/&lt;/gu, '<')
+  .replace(/&gt;/gu, '>')
+  .replace(/&quot;/gu, '"')
+  .replace(/&#39;/gu, "'")
+  .replace(/&nbsp;/gu, ' ');
+
+/** Text normalisation for scoring (HTML entities, NFKC, punctuation → space). */
+const mvNormalizeText = (value) => decodeHtmlEntities(String(value ?? ''))
+  .normalize('NFKC')
+  .toLowerCase()
+  .replace(/<[^>]*>/gu, ' ')
+  .replace(/[[\]【】「」『』()（）"'“”‘’]/gu, ' ')
+  .replace(/[_\-~|/\\:：·・.,，。!?！？]+/gu, ' ')
+  .replace(/\s+/gu, ' ')
+  .trim();
+
+/** The words of a normalised string that carry meaning for a match. */
+const mvMeaningfulTokens = (value) => mvNormalizeText(value)
+  .split(' ')
+  .map((token) => token.trim())
+  .filter((token) => token.length > 0)
+  .filter((token) => !MV_STOP_WORDS.has(token));
+
+/** The title with the source words (MV / official / 4K …) taken out. */
+const mvCoreText = (value) => {
+  let result = ` ${mvNormalizeText(value)} `;
+  for (const word of [...MV_SOURCE_WORDS].sort((left, right) => right.length - left.length)) {
+    result = result.replace(new RegExp(`\\s${word.replace(/\s+/gu, '\\s+')}\\s`, 'giu'), ' ');
+  }
+  return result.replace(/\s+/gu, ' ').trim();
+};
+
 /**
- * Picks the video for a track.
+ * How well a candidate title (+ uploader) answers the query: 0.2 … 0.97.
  *
- * `first` (the default) is deliberately dumb: whatever Bilibili's own search
- * returns first for the track name, which is what "match by name, take the first
- * video" means. The other two modes keep ECHO-main's ranking.
+ * `haystack` is what the query tokens are looked for in — title plus uploader —
+ * so an official channel matches even when its title only carries the song name.
+ */
+const scoreMvCandidate = (query, haystack) => {
+  const tokens = mvMeaningfulTokens(query);
+  if (!tokens.length) return 0.2;
+  const title = mvNormalizeText(haystack);
+  const core = mvCoreText(haystack);
+  if (!title) return 0.2;
+
+  const weightOf = (token) => (['cover', 'remix', 'live'].includes(token) ? 0.55 : 1);
+  const totalWeight = tokens.reduce((sum, token) => sum + weightOf(token), 0);
+  let matchedWeight = 0;
+  let exact = 0;
+  for (const token of tokens) {
+    if (core.includes(token)) {
+      // Substring, but inside the meaningful core → a full match.
+      matchedWeight += weightOf(token);
+      exact += 1;
+      continue;
+    }
+    if (title.includes(token)) matchedWeight += weightOf(token) * 0.6;
+  }
+  const coverage = totalWeight > 0 ? matchedWeight / totalWeight : 0;
+  let score = 0.2 + coverage * 0.62;
+
+  const phrase = tokens.join(' ');
+  if (phrase.length > 1 && core.includes(phrase)) score += 0.11;
+  if (exact === tokens.length && tokens.length > 1) score += 0.02;
+  if (MV_BOOST_RE.test(title)) score += 0.02;
+  if (MV_PENALTY_RE.test(title)) score *= 0.72;
+  return Number(Math.max(0.1, Math.min(0.97, score)).toFixed(4));
+};
+
+/**
+ * The query a candidate should be judged against for a track.
+ *
+ * The core of the search query (title + artist with the source words removed) plus
+ * the artist when the query does not already carry it — appending it twice would
+ * destroy the phrase bonus the ranking depends on ("晴天 周杰伦 周杰伦" is not a
+ * phrase any real title contains).
+ */
+const mvScoringQuery = (track, query) => {
+  const title = String(track?.title || '').trim();
+  const artist = String(track?.artist || '').trim();
+  const core = mvCoreText(query || '') || mvCoreText(title) || title;
+  if (!artist) return core;
+  return core.includes(mvNormalizeText(artist)) ? core : `${core} ${artist}`;
+};
+
+/** A candidate's score against the track, on this mod's scale (always recomputed). */
+const candidateScore = (candidate, track, query) => scoreMvCandidate(
+  mvScoringQuery(track, query),
+  `${candidate?.title || ''} ${candidate?.uploader || ''}`,
+);
+
+/** Re-scores a whole candidate list with the query the search was made for. */
+const scoreCandidateList = (candidates, track, query) => {
+  const list = Array.isArray(candidates) ? candidates : [];
+  const scored = list.map((item) => ({ ...item, score: candidateScore(item, track, query) }));
+  return scored;
+};
+
+/**
+ * Takes the next eligible candidate out of the round's pool.
+ *
+ * Used when the picked candidate turned out to be unplayable: a plausible
+ * runner-up is a far better answer than dropping to the progressive fallback (or
+ * leaving the song with no MV at all). Each candidate is handed out once.
+ */
+const takeNextCandidate = () => {
+  const pool = Array.isArray(backdrop.alternatives) ? backdrop.alternatives : [];
+  while (pool.length) {
+    const next = pool.shift();
+    if (next?.id) return next;
+  }
+  return null;
+};
+
+/**
+ * Stores a candidate list together with the track it was searched for.
+ *
+ * `state.mvCandidates` used to be a slot any asynchronous search could write
+ * into, so a late answer for the previous song was consumed for the new one. Every
+ * reader now goes through `candidateListFor()`, which refuses a list that belongs
+ * to another track.
+ */
+const setBackdropCandidates = (candidates, request, owner) => {
+  state.mvCandidates = {
+    forTrackId: String(owner || request?.trackId || ''),
+    request,
+    query: request?.query ?? null,
+    at: Date.now(),
+    candidates: Array.isArray(candidates) ? candidates : [],
+  };
+  return state.mvCandidates;
+};
+
+/** The stored candidates, but only when they belong to the track playing now. */
+const candidateListFor = (track) => {
+  const stored = state.mvCandidates;
+  if (!stored?.candidates?.length) return [];
+  if (!track) return [];
+  const owner = String(stored.forTrackId || stored.request?.trackId || '');
+  if (!owner || owner !== String(trackKey(track))) return [];
+  return stored.candidates;
+};
+
+/** Scores the stored candidates for a track (used by the settings page list). */
+const scoredCandidatesFor = (track) => {
+  const list = candidateListFor(track);
+  if (!list.length || !track) return [];
+  return scoreCandidateList(list, track, backdropQueryFor(track) || track.title);
+};
+
+/**
+ * Picks the video for a track out of a scored candidate list.
+ *
+ * EVERY mode filters by the threshold first — the suggestions the ranking makes
+ * only mean something on candidates that are actually about this song. Without
+ * that, `views` picked the most-viewed cover and `first` picked whatever
+ * Bilibili happened to put first (a compilation, a livestream slice).
+ *
+ *   first  — keep Bilibili's own order, but only among the eligible ones.
+ *   score  — highest score, view count as the tie-breaker.
+ *   views  — most viewed among the eligible ones, score as the tie-breaker.
+ *
+ * `candidates` is expected to carry this mod's scores (see scoreCandidateList);
+ * anything unscored counts as 0 and is filtered out rather than trusted.
  */
 const chooseBackdropCandidate = (candidates) => {
   const settings = backgroundConfig();
   const list = (Array.isArray(candidates) ? candidates : []).filter((item) => item?.id);
   if (!list.length) return null;
-  if (settings.matchMode === 'first') return list[0];
+  const scoreOf = (item) => {
+    const value = Number(item.score);
+    return Number.isFinite(value) ? value : 0;
+  };
+  const viewsOf = (item) => {
+    const value = Number(item.viewCount);
+    return Number.isFinite(value) && value > 0 ? value : 0;
+  };
+
+  const eligible = list.filter((item) => scoreOf(item) >= settings.threshold);
+  if (!eligible.length) return null;
+
+  if (settings.matchMode === 'first') return eligible[0];
 
   if (settings.matchMode === 'score') {
-    const eligible = list.filter((item) => Number(item.score) >= settings.threshold);
-    if (!eligible.length) return null;
-    return [...eligible].sort((left, right) => (Number(right.score) || 0) - (Number(left.score) || 0))[0];
+    return [...eligible].sort((left, right) => {
+      const delta = scoreOf(right) - scoreOf(left);
+      if (delta !== 0) return delta;
+      return viewsOf(right) - viewsOf(left);
+    })[0];
   }
 
-  const eligible = settings.preferViews ? list : list.filter((item) => Number(item.score) >= settings.threshold);
-  const pool = eligible.length ? eligible : list;
-  return [...pool].sort((left, right) => {
-    const views = (Number(right.viewCount) || 0) - (Number(left.viewCount) || 0);
-    if (views !== 0) return views;
-    return (Number(right.score) || 0) - (Number(left.score) || 0);
+  return [...eligible].sort((left, right) => {
+    const delta = viewsOf(right) - viewsOf(left);
+    if (delta !== 0) return delta;
+    return scoreOf(right) - scoreOf(left);
   })[0];
 };
 
-/** The Bilibili query for a track: title (+ artist) (+ an MV hint by setting). */
+/**
+ * The Bilibili query for a track: title (+ artist) (+ an MV hint by setting).
+ *
+ * Returns an EMPTY string when there is no usable title. That case used to fall
+ * through to `[title, artist, suffix].filter(Boolean)` and produce the bare query
+ * `"MV"`, which is a search for the most popular music videos on Bilibili — i.e.
+ * a video with no relation to the song at all. Callers must treat an empty query
+ * as "cannot match this round" and skip it.
+ */
 const backdropQueryFor = (track) => {
   const settings = backgroundConfig();
   const title = String(track?.title || '').trim();
+  if (!title) return '';
   const artist = String(track?.artist || '').trim();
   const parts = settings.titleOnly || !artist ? [title] : [title, artist];
   if (settings.searchSuffix) parts.push(settings.searchSuffix);
@@ -2802,6 +3029,11 @@ const playBackdropSource = (url, best, track, source) => {
   backdrop.source = source;
   backdrop.pendingTitle = best.title || track?.title || '';
   backdrop.ready = false;
+  // The whiteboard: which track this video was matched for. Written on EVERY path
+  // that puts a video into the layer (auto match, candidate apply, preview, bound
+  // link/file) — a URL without an owner was read as "stale" by the supervisor and
+  // re-matched on the next tick, which is what made a correct video flip away.
+  backdrop.matchedFor = trackSignature(track, backdrop.trackId ?? track?.stableKey ?? track?.id);
   // This layer now owns a stream: that is what reveals it (and hands the backdrop
   // over), exactly like ECHO-main rendering `.lyrics-mv-background` once a URL
   // exists. A new source has no frames yet, so the playing flag is cleared.
@@ -2827,11 +3059,16 @@ const playBackdropSource = (url, best, track, source) => {
 };
 
 /** Copies a resolved community video into the state the panel/status read. */
-const applyEngineVideo = (video, best) => {
+const applyEngineVideo = (video, best, track = null) => {
   state.mvSelected = video;
   state.mvOffset = Number(video.offsetMs) || 0;
   backdrop.offsetMs = Number(video.offsetMs) || 0;
   backdrop.videoDuration = Number(video.durationSeconds) || null;
+  // A candidate the engine resolved for a track also records its owner, so every
+  // path that ends up attaching a URL carries the same "this is for that song".
+  if (track) {
+    backdrop.matchedFor = trackSignature(track, backdrop.trackId ?? trackKey(track));
+  }
   const bvid = bvidOf(best?.id) || bvidOf(video.sourceId) || bvidOf(video.providerUrl) || bvidOf(video.url);
   const title = video.title || best?.title || '';
   const url = video.providerUrl || best?.url || null;
@@ -2867,6 +3104,7 @@ const acquireEngineVideo = async (track, best) => {
   const query = backdropQueryFor(track);
   const request = snapshotRequestFor(track, query);
   const bvid = bvidOf(best?.id);
+  const owner = String(request.trackId);
 
   let candidates = [];
   try {
@@ -2875,13 +3113,27 @@ const acquireEngineVideo = async (track, best) => {
     candidates = [];
   }
   const list = Array.isArray(candidates) ? candidates : [];
-  state.mvCandidates = { request, candidates: list };
+  // The list belongs to the track it was searched for: a late answer for the
+  // previous song must never be reused (that is how the wrong MV appeared).
+  if (owner !== backdrop.searchOwner) return null;
+  setBackdropCandidates(list, request, owner);
 
-  // The name-matched video wins; otherwise the configured ranking decides.
+  // The name-matched video wins; otherwise the configured ranking decides. Both
+  // are judged on this mod's scores (see scoreCandidateList).
+  const scoredList = scoreCandidateList(list, track, query);
   const named = bvid
-    ? list.find((item) => bvidOf(item?.providerUrl) === bvid || bvidOf(item?.url) === bvid)
+    ? scoredList.find((item) => bvidOf(item?.providerUrl) === bvid || bvidOf(item?.url) === bvid)
     : null;
-  const chosen = named ?? chooseBackdropCandidate(list);
+  // A hand-picked candidate (the name search already chose one) is only reused
+  // when it is plausible for this song; otherwise the threshold decides.
+  const namedEligible = named && Number(named.score) >= backgroundConfig().threshold ? named : null;
+  const chosen = namedEligible ?? chooseBackdropCandidate(scoredList);
+  backdrop.chosen = chosen || null;
+  // Runners-up, best first: an implausible or unplayable pick fails over to the
+  // next candidate instead of dropping straight to the progressive fallback.
+  backdrop.alternatives = chosen
+    ? scoredList.filter((item) => item?.id !== chosen.id && Number(item.score) >= backgroundConfig().threshold)
+    : [];
 
   if (chosen?.id) {
     try {
@@ -2892,6 +3144,7 @@ const acquireEngineVideo = async (track, best) => {
     }
   }
 
+  if (owner !== backdrop.searchOwner) return null;
   try {
     const video = await invokeMain('mvGetTemporaryPlayableForSnapshot', {
       ...request,
@@ -2924,7 +3177,7 @@ const backdropPlanFor = (track, best, resolved = null) => {
     const video = await acquireEngineVideo(track, best);
     if (!video?.mediaUrl || video.playableInApp === false) return null;
     context.video = video;
-    applyEngineVideo(video, best);
+    applyEngineVideo(video, best, track);
     return { url: video.mediaUrl, title: video.title || title(), source: 'engine' };
   };
 
@@ -2999,7 +3252,15 @@ const runBackdropSteps = async (steps, track, token) => {
   }
 
   if (token === backdrop.lookupToken) {
-    setBackdropMessage('error', backdrop.lastError || copy.backdropNoStream, 'no-source');
+    // Say which failure this was: nothing scored above the threshold (a matter of
+    // tuning) reads very differently from a candidate that exists but cannot be
+    // played.
+    const noCandidate = !backdrop.chosen && !backdrop.candidate;
+    setBackdropMessage(
+      'error',
+      backdrop.lastError || (noCandidate ? copy.backdropNoCandidate : copy.backdropNoStream),
+      noCandidate ? 'no-candidate' : 'no-source',
+    );
   }
   return false;
 };
@@ -3054,11 +3315,22 @@ const loadBackdropFor = async (track) => {
   backdrop.escalate = null;
   backdrop.offsetMs = 0;
   backdrop.lastError = null;
+  backdrop.chosen = null;
+  backdrop.alternatives = [];
   // The match that is starting belongs to this track from here on, so the video
   // left in the layer is dropped: it is the previous song's until this one
   // replaces it, and leaving it playing is what the automatic correction fixes.
   dropBackdropVideo();
   const query = backdropQueryFor(track);
+  // No title → no query. Searching anyway would send the bare suffix ("MV") to
+  // Bilibili and match some unrelated popular video, so this round is skipped and
+  // retried once the player reports the track's metadata.
+  if (!query) {
+    backdrop.lastError = copy.backdropNoTitle;
+    setBackdropMessage('error', copy.backdropNoTitle, 'no-title');
+    return false;
+  }
+  backdrop.searchOwner = String(trackKey(track));
   setBackdropMessage('searching', `${copy.backdropSearchingFor(query)}`);
 
   // A video the user bound to this song (a candidate they picked or a custom
@@ -3080,7 +3352,7 @@ const loadBackdropFor = async (track) => {
     }
     if (token !== backdrop.lookupToken) return false;
     if (video?.mediaUrl && video.playableInApp !== false) {
-      applyEngineVideo(video, { id: video.sourceId ?? bound.id, title: video.title });
+      applyEngineVideo(video, { id: video.sourceId ?? bound.id, title: video.title }, track);
       if (bound.filePath) {
         // A bound local file is served by the Range-capable loopback proxy.
         const served = await invokeMain('mvServeLocalFile', { filePath: bound.filePath }).catch(() => null);
@@ -3110,7 +3382,11 @@ const loadBackdropFor = async (track) => {
   if (token !== backdrop.lookupToken) return false;
 
   const candidates = Array.isArray(payload) ? payload : (Array.isArray(payload?.candidates) ? payload.candidates : []);
-  const best = chooseBackdropCandidate(candidates) || { id: '', title: track?.title || '', uploader: null, url: null };
+  // The name search is scored here too, so `first` / `views` stop trusting a raw
+  // Bilibili order that knows nothing about the threshold.
+  const scored = scoreCandidateList(candidates, track, query);
+  setBackdropCandidates(scored, snapshotRequestFor(track, query), String(trackKey(track)));
+  const best = chooseBackdropCandidate(scored) || { id: '', title: track?.title || '', uploader: null, url: null };
   const bvid = bvidOf(best.id);
   if (bvid) {
     backdrop.candidate = { bvid, url: best.url, title: best.title };
@@ -3326,7 +3602,14 @@ const alignBackdropToAudio = async ({ force = false, restart = false } = {}) => 
   }
 };
 
+// Bumped on every poll: an older run that comes back from an `await` after a
+// newer one started retires itself instead of writing stale state (two ticks can
+// overlap when the user skips tracks quickly).
+let backdropPollEpoch = 0;
+
 const pollBackdrop = async () => {
+  const epoch = ++backdropPollEpoch;
+  const retired = () => epoch !== backdropPollEpoch;
   if (!backdropEnabled()) {
     syncPlayerToggle();
     return;
@@ -3358,6 +3641,7 @@ const pollBackdrop = async () => {
   } catch {
     return;
   }
+  if (retired()) return;
 
   const settings = backgroundConfig();
   const id = status?.currentTrackId ?? status?.trackId ?? null;
@@ -3408,8 +3692,30 @@ const pollBackdrop = async () => {
           return;
         }
         if (backdrop.stalls > BACKDROP_STALL_RETRIES) {
-          // Every source failed to start: acquire the video for this track again.
+          // This candidate never produced a picture. The pool exists: give the
+          // next eligible candidate a chance before going back to square one, so
+          // one bad pick cannot leave the song without an MV.
           backdrop.stalls = 0;
+          const nextCandidate = takeNextCandidate();
+          if (nextCandidate) {
+            backdrop.lastError = null;
+            setBackdropMessage('resolving', copy.backdropRetrying);
+            const owner = String(backdrop.trackId || id);
+            const bvid = bvidOf(nextCandidate.id) || bvidOf(nextCandidate.url);
+            if (bvid) {
+              backdrop.candidate = { bvid, url: nextCandidate.url, title: nextCandidate.title };
+              backdrop.matched = { bvid, title: nextCandidate.title, uploader: nextCandidate.uploader ?? null, url: nextCandidate.url ?? null };
+            }
+            const plan = backdropPlanFor(track, nextCandidate);
+            const steps = settings.sourceMode === 'progressive'
+              ? [plan.progressiveStep]
+              : [plan.engineStep, plan.proxyStep, plan.progressiveStep];
+            const token = ++backdrop.lookupToken;
+            backdrop.searchOwner = owner;
+            void runBackdropSteps(steps, track, token);
+            return;
+          }
+          // The pool is empty: acquire the video for this track again.
           backdrop.trackId = null;
           backdrop.lastError = null;
           setBackdropMessage('resolving', copy.backdropRetrying);
@@ -3449,6 +3755,7 @@ const pollBackdrop = async () => {
     } finally {
       backdrop.loading = false;
     }
+    if (retired()) return;
     return;
   }
 
@@ -3851,6 +4158,15 @@ const rematchCurrentTrack = async (reason = '') => {
   const id = status?.currentTrackId ?? status?.trackId ?? null;
   const track = id ? currentTrackFromStatus(status) : null;
   if (!track) return false;
+  // Metadata that cannot produce a query (no title) is not a match failure to
+  // repair: say so instead of searching for the bare suffix.
+  if (!backdropQueryFor(track)) {
+    backdrop.lastError = copy.backdropNoTitle;
+    setBackdropMessage('error', copy.backdropNoTitle, 'no-title');
+    renderBackdropPanelBody(true);
+    syncPlayerToggle();
+    return false;
+  }
   const loaded = await loadBackdropFor(track);
   if (token !== backdrop.lookupToken) return false;
   backdrop.trackId = loaded ? String(id) : null;
@@ -4660,6 +4976,9 @@ const playEngineVideo = async (video, candidate) => {
   backdrop.retry = null;
   backdrop.escalate = null;
   backdrop.lastError = null;
+  // This video is being attached for the track playing right now (candidate
+  // apply / preview / quality change), so its owner is recorded here as well.
+  backdrop.matchedFor = trackSignature(track, backdrop.trackId ?? trackKey(track));
   const plan = backdropPlanFor(track, best, video);
   const settings = backgroundConfig();
   const steps = settings.sourceMode === 'progressive'
@@ -4685,7 +5004,7 @@ const engineSetQuality = async (qualityId) => {
     const variants = state.mvVariants?.variants || [];
     const chosen = variants.find((item) => item.id === qualityId);
     reportNotice(`${copy.engineQuality}：${chosen?.label || updated?.qualityLabel || qualityId}`);
-    applyEngineVideo({ ...state.mvSelected, ...updated }, { id: updated?.sourceId, title: updated?.title });
+    applyEngineVideo({ ...state.mvSelected, ...updated }, { id: updated?.sourceId, title: updated?.title }, state.lastTrack || null);
     if (updated?.mediaUrl && chosen) {
       await playEngineVideo(updated, { id: updated.sourceId, title: updated.title, url: updated.providerUrl });
     }
@@ -4729,7 +5048,7 @@ const engineBindLocalFile = async () => {
   try {
     const bound = await invokeMain('mvChooseLocalVideo', { trackId: request.trackId });
     if (!bound) return;
-    applyEngineVideo(bound, { id: bound.id, title: bound.title || '' });
+    applyEngineVideo(bound, { id: bound.id, title: bound.title || '' }, state.lastTrack || null);
     if (bound.filePath) {
       // A local file is served by the same Range-capable loopback proxy.
       const served = await invokeMain('mvServeLocalFile', { filePath: bound.filePath });
@@ -5057,7 +5376,7 @@ const applyVideoForTrack = async (url, label) => {
     const video = resolved?.video ?? bound;
     if (!video?.mediaUrl && video?.playableInApp === false) throw new Error(copy.backdropNoStream);
 
-    applyEngineVideo(video, { id: video.sourceId ?? bound.id, title: video.title || label || value });
+    applyEngineVideo(video, { id: video.sourceId ?? bound.id, title: video.title || label || value }, state.lastTrack || null);
     if (video?.mediaUrl) {
       await playEngineVideo(video, { id: video.sourceId, title: video.title, url: video.providerUrl });
     }
@@ -5078,6 +5397,11 @@ const loadBackdropCandidates = async (track, options = {}) => {
     if (!options.silent) reportNotice(copy.testMatchNeedTrack);
     return;
   }
+  // Which track this search is for. A slow answer that lands after the user (or
+  // the poll) moved on to another song must not be stored as that song's
+  // candidates — that is how a list for the previous track, scored against the
+  // previous track's query, ended up rendered under the new song.
+  const owner = String(trackKey(track));
   if (!options.silent) {
     state.busy = copy.testMatch;
     renderSoon();
@@ -5085,6 +5409,10 @@ const loadBackdropCandidates = async (track, options = {}) => {
   try {
     const mode = backgroundConfig().matchMode;
     const query = backdropQueryFor(track);
+    if (!query) {
+      if (!options.silent) reportNotice(copy.backdropNoTitle);
+      return;
+    }
     const payload = await invokeMain('findMvCandidates', {
       title: track.title,
       artist: track.artist,
@@ -5094,9 +5422,15 @@ const loadBackdropCandidates = async (track, options = {}) => {
       limit: backgroundConfig().candidateLimit,
       mode,
     });
+    if (owner !== String(trackKey(state.lastTrack || {}))) return;
     const candidates = Array.isArray(payload) ? payload : (Array.isArray(payload?.candidates) ? payload.candidates : []);
-    const chosen = chooseBackdropCandidate(candidates);
-    state.backgroundTest = { track, result: { mode, query, candidates, chosen } };
+    // Scored here too, so the list the page shows and the auto match agree.
+    const scored = scoreCandidateList(candidates, track, query);
+    const chosen = chooseBackdropCandidate(scored);
+    state.backgroundTest = { forTrackId: owner, track, result: { mode, query, candidates: scored, chosen } };
+    // The engine's own list for this track is replaced as well, so both lists the
+    // page merges describe the same song.
+    if (candidates.length) setBackdropCandidates(candidates, snapshotRequestFor(track, query), owner);
     if (!options.silent) {
       if (chosen) reportNotice(copy.testMatched(chosen.title, chosen.uploader));
       else reportNotice(copy.testNoMatch);
@@ -5122,6 +5456,10 @@ const previewBackgroundCandidate = async (candidate) => {
   backdrop.candidate = { bvid, url: candidate.url, title: candidate.title };
   backdrop.matched = { bvid, title: candidate.title, uploader: candidate.uploader ?? null, url: candidate.url ?? null };
   const track = state.lastTrack || {};
+  // Previewing a candidate attaches a video for the current song, so it records
+  // its owner like every other attach path (otherwise the poll reads it as stale
+  // and immediately replaces the preview).
+  backdrop.matchedFor = trackSignature(track, backdrop.trackId ?? trackKey(track));
   if (!lyricsPage()) {
     reportNotice(copy.testMatchNeedTrack);
     return;
@@ -5140,10 +5478,19 @@ const previewBackgroundCandidate = async (candidate) => {
  * The settings page used to render two lists side by side — the mod's name search
  * and the community engine's scored search — which are the same Bilibili query for
  * the same song, so the same videos appeared twice with different buttons. They are
- * merged by BV id (the entry carrying more information wins) and rendered once.
+ * merged by BV id and rendered once.
+ *
+ * When both searches describe the same video, the copy that carries the better
+ * score wins: the engine's entry for a video is often coarser (it may miss the
+ * artist, or predate the current title), and letting it overwrite the scored copy
+ * made the row show a worse match percentage than the one the ranking used.
  */
 const mergedBackdropCandidates = () => {
   const byBvid = new Map();
+  const scoreOf = (item) => {
+    const value = Number(item?.score);
+    return Number.isFinite(value) ? value : -1;
+  };
   const richness = (item) => (item?.thumbnailUrl ? 2 : 0)
     + (Number.isFinite(Number(item?.score)) ? 1 : 0)
     + (Array.isArray(item?.reasons) && item.reasons.length ? 1 : 0)
@@ -5158,12 +5505,22 @@ const mergedBackdropCandidates = () => {
       byBvid.set(key, { ...item, bvid });
       return;
     }
-    const merged = richness(item) > richness(previous) ? { ...previous, ...item } : { ...item, ...previous };
-    byBvid.set(key, { ...merged, bvid });
+    const better = scoreOf(item) > scoreOf(previous)
+      || (scoreOf(item) === scoreOf(previous) && richness(item) > richness(previous));
+    const merged = better ? { ...previous, ...item } : { ...item, ...previous };
+    byBvid.set(key, { ...merged, bvid, score: Math.max(scoreOf(item), scoreOf(previous)) });
   };
-  // The name-search result first (it is the order the automatic match uses).
-  for (const item of state.backgroundTest?.result?.candidates || []) add(item);
-  for (const item of state.mvCandidates?.candidates || []) add(item);
+  // The name-search result first (it is the order the automatic match uses), but
+  // only when it was actually searched for the song playing now.
+  const test = state.backgroundTest;
+  const testOwner = String(test?.forTrackId || '');
+  if (test?.result?.candidates?.length && state.lastTrack
+      && (!testOwner || testOwner === String(trackKey(state.lastTrack)))) {
+    for (const item of test.result.candidates) add(item);
+  }
+  // …then the engine's candidates, but only when they belong to the playing track
+  // (a list left over from the previous song is not shown for this one).
+  for (const item of scoredCandidatesFor(state.lastTrack)) add(item);
   return [...byBvid.values()];
 };
 
@@ -5195,14 +5552,19 @@ const searchBackdropByTitle = async (rawQuery) => {
         query,
       }).catch(() => null);
       const list = Array.isArray(snapshot) ? snapshot : (snapshot?.candidates || []);
-      candidates = list.slice(0, limit);
-      if (candidates.length) state.mvCandidates = { trackId: String(trackKey(track)), candidates };
+      candidates = scoreCandidateList(list.slice(0, limit), track, query);
+      if (candidates.length) setBackdropCandidates(list.slice(0, limit), snapshotRequestFor(track, query), String(trackKey(track)));
     }
     if (!candidates.length) {
       // No playing track (or the engine had nothing): a plain name search.
       const payload = await invokeMain('findMvCandidates', { title: query, query, limit, mode: 'first' }).catch(() => null);
       const list = Array.isArray(payload) ? payload : (payload?.candidates || []);
-      candidates = list.slice(0, limit);
+      // A typed title IS the query here, so the score is how well the result
+      // contains it — no song metadata is involved in this mode.
+      candidates = list.slice(0, limit).map((item) => ({
+        ...item,
+        score: scoreMvCandidate(query, `${item?.title || ''} ${item?.uploader || ''}`),
+      }));
     }
     state.titleSearch = { for: track ? String(trackKey(track)) : '', query, result: { query, candidates } };
     if (!candidates.length) reportNotice(copy.testNoMatch);
