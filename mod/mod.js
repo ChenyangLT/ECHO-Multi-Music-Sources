@@ -3118,21 +3118,30 @@ const acquireEngineVideo = async (track, best) => {
   if (owner !== backdrop.searchOwner) return null;
   setBackdropCandidates(list, request, owner);
 
-  // The name-matched video wins; otherwise the configured ranking decides. Both
-  // are judged on this mod's scores (see scoreCandidateList).
+  // The name search already picked a video for this song and the engine's list is
+  // the same Bilibili query — but the engine's copy of a video can be coarser (a
+  // generic title, no artist), which scores lower than the copy the name search
+  // saw. Taking the engine's copy unconditionally threw away the better-scored
+  // pick and landed on a different video. So: take whichever clears the threshold
+  // with the higher score, and only fall back to the ranking when neither does.
+  const threshold = backgroundConfig().threshold;
   const scoredList = scoreCandidateList(list, track, query);
   const named = bvid
     ? scoredList.find((item) => bvidOf(item?.providerUrl) === bvid || bvidOf(item?.url) === bvid)
     : null;
-  // A hand-picked candidate (the name search already chose one) is only reused
-  // when it is plausible for this song; otherwise the threshold decides.
-  const namedEligible = named && Number(named.score) >= backgroundConfig().threshold ? named : null;
-  const chosen = namedEligible ?? chooseBackdropCandidate(scoredList);
+  const ranked = chooseBackdropCandidate(scoredList);
+  const namedEligible = named && Number(named.score) >= threshold ? named : null;
+  const rankedEligible = ranked && Number(ranked.score) >= threshold ? ranked : null;
+  const chosen = namedEligible && rankedEligible
+    ? (Number(namedEligible.score) >= Number(rankedEligible.score) ? namedEligible : rankedEligible)
+    : (namedEligible ?? rankedEligible);
   backdrop.chosen = chosen || null;
   // Runners-up, best first: an implausible or unplayable pick fails over to the
   // next candidate instead of dropping straight to the progressive fallback.
   backdrop.alternatives = chosen
-    ? scoredList.filter((item) => item?.id !== chosen.id && Number(item.score) >= backgroundConfig().threshold)
+    ? scoredList
+      .filter((item) => item?.id !== chosen.id && Number(item.score) >= threshold)
+      .sort((left, right) => Number(right.score) - Number(left.score))
     : [];
 
   if (chosen?.id) {
