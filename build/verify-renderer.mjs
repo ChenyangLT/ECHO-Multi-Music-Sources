@@ -575,6 +575,8 @@ localStorageShim.setItem('echo.external-mod.echo.multi-music-sources', JSON.stri
   playlistViewMode: 'compact',
   mvShowSettingsButton: true,
 }));
+// What the mod copied to the clipboard (the browser search puts the song there).
+const clipboardWrites = [];
 const windowListeners = new Map();
 const windowShim = {
   echo: {},
@@ -604,6 +606,10 @@ const windowShim = {
 const sandbox = {
   echoExternalMod,
   window: windowShim,
+  // The mod also reaches for the bare global (`localStorage.setItem(...)`), which is
+  // how a browser exposes it; without this the write throws and its own try/catch
+  // swallows it, so the store silently never changes.
+  localStorage: localStorageShim,
   // mod.js runs as the body of an injected function, so its `window` is this
   // context's global: delegate the global listener API to the same registry the
   // test dispatches through, or a window listener would never fire.
@@ -611,7 +617,7 @@ const sandbox = {
   removeEventListener: windowShim.removeEventListener,
   dispatch: windowShim.dispatch,
   CustomEvent,
-  navigator: { clipboard: { writeText: async () => {} } },
+  navigator: { clipboard: { writeText: async (value) => { clipboardWrites.push(String(value)); } } },
   document: documentShim,
   requestAnimationFrame: (callback) => setTimeout(() => callback(Date.now()), 0),
   setTimeout,
@@ -1001,6 +1007,12 @@ const run = async () => {
     playerBarToggle?.className,
   );
   check('player-bar toggle injected', Boolean(playerBarToggle), `${transportBar.children.length} transport children`);
+  check(
+    'the transport button draws the community Clapperboard glyph',
+    /M20\.2 6 3 11/u.test(String(playerBarToggle?.innerHTML || ''))
+      && /stroke-width="1\.8"/u.test(String(playerBarToggle?.innerHTML || '')),
+    String(playerBarToggle?.innerHTML || '').slice(0, 64),
+  );
   await waitFor(() => calls.some((call) => call.method === 'findMvCandidates'), 'MV search', 12000);
   check('Bilibili MV searched for the playing track', calls.some((call) => call.method === 'findMvCandidates' && call.payload?.title === '晴天'), JSON.stringify(calls.find((call) => call.method === 'findMvCandidates')?.payload));
   await waitFor(() => lyricsPage.querySelector('video')?.src, 'background video', 8000);
@@ -1030,7 +1042,13 @@ const run = async () => {
     !calls.some((call) => call.method === 'prepareMvProgressive'),
     calls.filter((call) => call.method === 'prepareMvProgressive').length ? 'progressive used' : 'engine stream used',
   );
-  check('background video is muted + looping (autoplay-safe)', backdropVideo?.muted === true && backdropVideo?.loop === true, `muted=${backdropVideo?.muted} loop=${backdropVideo?.loop}`);
+  // The element loops only for the "loop" end behaviour: the other choices are
+  // driven by the `ended` event, which a looping element never fires.
+  check(
+    'background video is muted and not element-looping by default (autoplay-safe)',
+    backdropVideo?.muted === true && backdropVideo?.loop === false,
+    `muted=${backdropVideo?.muted} loop=${backdropVideo?.loop} end=${config.mvEndBehaviour}`,
+  );
   check('background layer marked playing', lyricsPage.querySelector('.mms-lyrics-bg')?.dataset.state === 'playing', lyricsPage.querySelector('.mms-lyrics-bg')?.dataset.state);
 
   // A fragmented DASH stream reports only its own few seconds: the background
@@ -2978,9 +2996,8 @@ const run = async () => {
     );
   }
 
-  // --- the settings page keeps up with the playing song (and title search) --
-  // 当前歌曲 / 候选歌曲 have to follow the track that is playing, and the page now
-  // carries its own Bilibili search by an explicit title.
+  // --- the settings page keeps up with the playing song ---------------------
+  // 当前歌曲 / 候选歌曲 have to follow the track that is playing.
   {
     // The 「MV 背景」 sidebar page has its own shell; re-rendering it is what a track
     // change plus a poll tick does in the app.
@@ -2993,27 +3010,36 @@ const run = async () => {
       matchText().includes('下一首歌'),
       matchText().slice(0, 90),
     );
-    const titleInput = liveRoot.querySelectorAll('.mms-search-input')
-      .find((input) => String(input.placeholder || '').includes('歌名') || String(input.placeholder || '').includes('标题'));
-    check('the settings page offers a title search', Boolean(titleInput), titleInput?.placeholder);
-    if (titleInput) {
-      const searchesBefore = calls.filter((call) => call.method === 'mvSearchNetworkCandidatesForSnapshot').length;
-      titleInput.value = '自定义标题';
-      titleInput.dispatch('keydown', { key: 'Enter' });
-      await settle(4);
-      const searchCall = calls.filter((call) => call.method === 'mvSearchNetworkCandidatesForSnapshot').pop();
+
+    // The in-panel title search was removed: its results could never score better
+    // than the automatic match, so the page hands the search to the browser
+    // instead (copy the song, open Bilibili).
+    check(
+      'the in-panel title search is gone',
+      !liveRoot.querySelectorAll('.mms-search-input')
+        .some((input) => String(input.placeholder || '').includes('标题')),
+      liveRoot.querySelectorAll('.mms-search-input').map((input) => input.placeholder).join(' | ') || '(none)',
+    );
+    const bilibiliButton = liveRoot.querySelectorAll('button')
+      .find((item) => item.textContent.includes('B 站'));
+    check('the page offers the browser search instead', Boolean(bilibiliButton), bilibiliButton?.textContent);
+    if (bilibiliButton) {
+      let opened = null;
+      windowShim.open = (url) => { opened = url; return null; };
+      clipboardWrites.length = 0;
+      bilibiliButton.click();
+      await settle(2);
       check(
-        'the typed title is what reaches the search',
-        calls.filter((call) => call.method === 'mvSearchNetworkCandidatesForSnapshot').length > searchesBefore
-          && searchCall?.payload?.query === '自定义标题',
-        `query=${searchCall?.payload?.query}`,
+        'it copies the song and opens Bilibili\'s search for it',
+        String(opened || '').includes('search.bilibili.com') && String(opened).includes(encodeURIComponent('下一首歌')),
+        String(opened || 'no window.open'),
       );
-      await waitFor(() => matchText().includes('自定义标题'), 'title search results rendered', 6000);
       check(
-        'the title search results are listed on the page',
-        matchText().includes('自定义标题') && liveRoot.querySelectorAll('.mms-bg-candidates').length >= 1,
-        `${liveRoot.querySelectorAll('.mms-bg-candidates').length} list(s)`,
+        'the song name reaches the clipboard',
+        clipboardWrites.some((value) => String(value).includes('下一首歌')),
+        JSON.stringify(clipboardWrites).slice(0, 80),
       );
+      windowShim.open = null;
     }
   }
 
@@ -3103,6 +3129,274 @@ const run = async () => {
       !searches.some((call) => String(call.payload?.query || '').trim() === 'MV'),
       JSON.stringify(searches.map((call) => call.payload?.query || call.payload?.title)),
     );
+  }
+
+  // --- the page follows the player even with the background switched off -----
+  // pollBackdrop() returned before it ever read the player status when the
+  // background was off (or the lyrics page was closed), so 当前歌曲 and the
+  // candidate list kept the previous song forever — the reported "switching songs
+  // does not update the settings page".
+  {
+    const followRoot = new Element('div');
+    mvPage.render(followRoot, { toast: (message) => toasts.push(message), echo: {}, config: echoExternalMod.config });
+    await settle(6);
+    config.mvEnabled = false;
+    await settle(6);
+    config.songBackgroundEnabled = false;
+    config.mvAutoSearch = true;
+    config.mvAutoPreload = true;
+    mainResponses.findMvCandidates = {
+      ok: true,
+      result: [{ id: 'BVOFFLINE', title: '离线换歌 周杰伦 MV', uploader: 'UP', url: 'https://www.bilibili.com/video/BVOFFLINE', duration: 200, viewCount: 100 }],
+    };
+    player.status = async () => ({
+      state: 'playing',
+      currentTrackId: 'streaming:netease:555',
+      positionSeconds: 12,
+      durationSeconds: 200,
+      currentTrack: { id: 'streaming:netease:555', stableKey: 'streaming:netease:555', mediaType: 'streaming', provider: 'netease', providerTrackId: '555', title: '离线换歌', artist: '周杰伦', duration: 200 },
+    });
+    await waitFor(() => calls.some((call) => call.method === 'rememberTrack' && call.payload?.id === 'streaming:netease:555'), 'track registered while off', 12_000);
+    const statusReadsWhileOff = calls.filter((call) => call.method === 'playerStatus').length;
+    await settle(4);
+    check(
+      'the playing track is read even while the MV background is off',
+      statusReadsWhileOff > 0 || calls.filter((call) => call.method === 'rememberTrack' && call.payload?.id === 'streaming:netease:555').length > 0,
+      `rememberTrack for the new song, ${calls.filter((call) => call.method === 'playerStatus').length} status read(s)`,
+    );
+    // The page is a sidebar page of its own, so the loader re-renders it; what
+    // matters is that the state it reads is the new song.
+    mvPage.render(followRoot, { toast: (message) => toasts.push(message), echo: {}, config: echoExternalMod.config });
+    await settle(2);
+    check(
+      'the settings page follows the song even while the MV background is off',
+      followRoot.allText().includes('离线换歌'),
+      followRoot.allText().slice(0, 90),
+    );
+    config.mvEnabled = true;
+  }
+
+  // --- sections collapse like the community drawer --------------------------
+  {
+    const sectionRoot = new Element('div');
+    mvPage.render(sectionRoot, { toast: (message) => toasts.push(message), echo: {}, config: echoExternalMod.config });
+    await settle(2);
+    const sections = sectionRoot.querySelectorAll('.mms-bg-section');
+    const toggles = sectionRoot.querySelectorAll('.mms-bg-section-toggle');
+    check(
+      'the settings page is built from collapsible sections',
+      sections.length >= 3 && toggles.length === sections.length,
+      `${sections.length} section(s), ${toggles.length} toggle(s)`,
+    );
+    const matchToggle = toggles[0];
+    check('a section starts open', sections[0]?.dataset.open === 'true', `open=${sections[0]?.dataset.open}`);
+    matchToggle?.click();
+    await settle(1);
+    check('the chevron collapses a section', sections[0]?.dataset.open === 'false', `open=${sections[0]?.dataset.open}`);
+    check(
+      'the collapsed state is remembered',
+      String(localStorageShim.getItem('echo.mms.section-state.v1') || '').includes('false'),
+      String(localStorageShim.getItem('echo.mms.section-state.v1') || '').slice(0, 80),
+    );
+  }
+
+  // --- a rebuild never replaces the page under the pointer ------------------
+  // A click only fires when mousedown and mouseup share a target, so a rebuild in
+  // between silently swallows the press ("some buttons do not respond").
+  {
+    const busyRoot = new Element('div');
+    mvPage.render(busyRoot, { toast: (message) => toasts.push(message), echo: {}, config: echoExternalMod.config });
+    await settle(2);
+    const firstButton = busyRoot.querySelectorAll('.mms-bg-section-toggle')[0];
+    firstButton?.dispatch('pointerdown', {});
+    const before = busyRoot.querySelectorAll('.mms-bg-section').length;
+    await settle(3);
+    check(
+      'a poll tick leaves the page alone right after a press',
+      busyRoot.querySelectorAll('.mms-bg-section-toggle')[0] === firstButton && busyRoot.querySelectorAll('.mms-bg-section').length === before,
+      'the pressed control survived',
+    );
+  }
+
+  // --- what happens when the MV runs out (mvEndBehaviour) --------------------
+  // The background used to be hard-wired to loop, so a video that ran out either
+  // restarted (a three-minute MV visibly jumping back) or, when the stream was a
+  // fragment, looped its first seconds forever.
+  {
+    // The 同步 section is on the 「MV 背景」 page, which has its own root.
+    config.mvEndBehaviour = 'pause';
+    const endRoot = new Element('div');
+    mvPage.render(endRoot, { toast: (message) => toasts.push(message), echo: {}, config: echoExternalMod.config });
+    await settle(3);
+    const pickEnded = () => endRoot.querySelectorAll('.mms-select')
+      .find((select) => select.children.some((option) => option.value === 'colour'));
+    const endVideo = () => lyricsPage.querySelector('.mms-backdrop-video');
+    const endLayer = () => lyricsPage.querySelector('.mms-lyrics-bg');
+    check('the settings page offers the MV end behaviour', Boolean(pickEnded()), pickEnded() ? `${pickEnded().children.length} options` : 'no select');
+    check('the pause choice leaves the element unlooped', endVideo()?.loop === false, `loop=${endVideo()?.loop}`);
+
+    if (pickEnded()) {
+      // "pause": the video stops and the last frame stays.
+      pickEnded().value = 'pause';
+      pickEnded().dispatch('change');
+      await settle(3);
+      endVideo()?.dispatch('ended');
+      await settle(1);
+      check(
+        'the MV stops when it finishes (pause)',
+        endVideo()?.paused === true && endLayer()?.dataset.ended === 'false',
+        `paused=${endVideo()?.paused} ended=${endLayer()?.dataset.ended}`,
+      );
+
+      // "loop": the element loops again.
+      pickEnded().value = 'loop';
+      pickEnded().dispatch('change');
+      await settle(3);
+      check('the loop choice restores element looping', endVideo()?.loop === true, `loop=${endVideo()?.loop}`);
+
+      // "colour": the picture is dropped and the colour layer shows.
+      pickEnded().value = 'colour';
+      pickEnded().dispatch('change');
+      await settle(3);
+      endVideo()?.dispatch('ended');
+      await settle(1);
+      check(
+        'the solid-colour choice reveals the colour layer',
+        endLayer()?.dataset.ended === 'true' && Boolean(endLayer()?.style?.getPropertyValue('--mms-ended-colour')),
+        `ended=${endLayer()?.dataset.ended} colour=${endLayer()?.style?.getPropertyValue('--mms-ended-colour')}`,
+      );
+      // The colour field only appears for that choice. The settings page is rebuilt
+      // from the stored config, so a fresh render is what shows it.
+      const colourRoot = new Element('div');
+      mvPage.render(colourRoot, { toast: (message) => toasts.push(message), echo: {}, config: echoExternalMod.config });
+      await settle(2);
+      const colourInput = colourRoot.querySelectorAll('input')
+        .find((input) => String(input.className || '').includes('mms-colour-input'));
+      check(
+        'the colour choice offers a colour picker',
+        Boolean(colourInput) && String(colourInput.value).startsWith('#'),
+        colourInput ? `${colourInput.type} ${colourInput.value}` : 'not found',
+      );
+      config.mvEndBehaviour = 'pause';
+    }
+  }
+
+  // --- the browser hand-off follows the playing song -------------------------
+  // The in-panel title search was removed (its results could never beat the
+  // automatic match), so the page copies the song out and opens Bilibili instead.
+  // What matters is that the text is always the song playing NOW.
+  {
+    const handoffRoot = new Element('div');
+    mvPage.render(handoffRoot, { toast: (message) => toasts.push(message), echo: {}, config: echoExternalMod.config });
+    await settle(3);
+    const handoffButton = handoffRoot.querySelectorAll('button')
+      .find((item) => item.textContent.includes('B 站'));
+    check('the browser hand-off button is on the page', Boolean(handoffButton), handoffButton?.textContent);
+    if (handoffButton) {
+      let opened = null;
+      windowShim.open = (url) => { opened = url; return null; };
+      clipboardWrites.length = 0;
+      handoffButton.click();
+      await settle(2);
+      check(
+        'the hand-off opens Bilibili for the song that is playing',
+        String(opened || '').includes('search.bilibili.com') && /keyword=.+/u.test(String(opened || '')),
+        String(opened || 'no window.open'),
+      );
+
+      // A track change must change what the button hands over.
+      player.status = async () => ({
+        state: 'playing',
+        currentTrackId: 'streaming:netease:778',
+        positionSeconds: 5,
+        durationSeconds: 180,
+        currentTrack: { id: 'streaming:netease:778', stableKey: 'streaming:netease:778', mediaType: 'streaming', provider: 'netease', providerTrackId: '778', title: '换了一首歌', artist: '别的歌手', duration: 180 },
+      });
+      await waitFor(() => calls.some((call) => call.method === 'rememberTrack' && call.payload?.id === 'streaming:netease:778'), 'new track registered', 12_000);
+      await settle(5);
+      mvPage.render(handoffRoot, { toast: (message) => toasts.push(message), echo: {}, config: echoExternalMod.config });
+      await settle(2);
+      const nextButton = handoffRoot.querySelectorAll('button').find((item) => item.textContent.includes('B 站'));
+      opened = null;
+      clipboardWrites.length = 0;
+      nextButton?.click();
+      await settle(2);
+      check(
+        'a track change changes what the hand-off copies',
+        String(opened || '').includes(encodeURIComponent('换了一首歌'))
+          && clipboardWrites.some((value) => String(value).includes('换了一首歌')),
+        `${String(opened || '').slice(-40)} | ${JSON.stringify(clipboardWrites)}`,
+      );
+      windowShim.open = null;
+    }
+  }
+
+  // --- every button answers a press -----------------------------------------
+  // "I clicked and nothing happened" cannot be answered without feedback, so a
+  // press marks the button (data-feedback, which the stylesheet tints).
+  {
+    const feedbackRoot = new Element('div');
+    mvPage.render(feedbackRoot, { toast: (message) => toasts.push(message), echo: {}, config: echoExternalMod.config });
+    await settle(2);
+    const pressed = feedbackRoot.querySelectorAll('button')[0];
+    pressed?.click();
+    const flag = pressed?.dataset?.feedback ?? pressed?.getAttribute?.('data-feedback');
+    check('a pressed button shows feedback', flag === 'true', `feedback=${flag}`);
+  }
+
+  // --- saving a playlist also writes it into ECHO's own library -------------
+  // The mod used to keep saved playlists only in its own JSON store, so they never
+  // appeared in the app's 收藏与歌单. It now creates a library playlist and adds the
+  // streaming tracks through `window.echo.library` (exposed by ECHO's preload).
+  {
+    const libraryCalls = [];
+    windowShim.echo = {
+      library: {
+        getPlaylists: async () => [],
+        createPlaylist: async (payload) => { libraryCalls.push(['createPlaylist', payload?.name]); return { id: 'echo-pl-1' }; },
+        addStreamingTrackToPlaylist: async (playlistId, track) => { libraryCalls.push(['addTrack', playlistId, `${track.provider}:${track.providerTrackId}:${track.title}`]); return { ok: true }; },
+      },
+    };
+    config.mvLibraryPlaylists = true;
+    mainResponses.importAccountCollection = {
+      ok: true,
+      result: {
+        playlistName: '库测试歌单',
+        tracks: [
+          { id: 'streaming:netease:1', stableKey: 'streaming:netease:1', provider: 'netease', providerTrackId: '1', title: '晴天', artist: '周杰伦', duration: 269 },
+          // An unknown provider and a missing id must be skipped, not crash the write.
+          { id: 'bad:1', provider: 'unknown-provider', providerTrackId: '', title: '坏的' },
+        ],
+      },
+    };
+    const libRoot = new Element('div');
+    // The audio page's own shell: the 我的歌单 tab is where the save control lives.
+    sidebarPage.render(libRoot, { toast: (message) => toasts.push(message), echo: {}, config: echoExternalMod.config });
+    await settle(3);
+    libRoot.querySelectorAll('.mms-nav-tab').find((tab) => tab.textContent.includes('我的歌单'))?.click();
+    await waitFor(() => libRoot.allText().includes('保存到本地'), 'playlist cards', 8000);
+    const saveButton = libRoot.querySelectorAll('button').find((item) => item.textContent === '保存到本地');
+    check('the playlist card offers 保存到本地', Boolean(saveButton), saveButton?.textContent || 'not found');
+    if (saveButton) {
+      saveButton.click();
+      await settle(5);
+      check(
+        'saving creates an ECHO library playlist',
+        libraryCalls.some((call) => call[0] === 'createPlaylist'),
+        JSON.stringify(libraryCalls),
+      );
+      check(
+        'the playlist\'s streaming tracks are added to it',
+        libraryCalls.some((call) => call[0] === 'addTrack' && call[2] === 'netease:1:晴天'),
+        JSON.stringify(libraryCalls.filter((call) => call[0] === 'addTrack')),
+      );
+      check(
+        'a track with no usable provider/id is skipped',
+        libraryCalls.filter((call) => call[0] === 'addTrack').length === 1,
+        `${libraryCalls.filter((call) => call[0] === 'addTrack').length} track(s) written`,
+      );
+    }
+    windowShim.echo = {};
   }
 
   // --- cleanup -------------------------------------------------------------

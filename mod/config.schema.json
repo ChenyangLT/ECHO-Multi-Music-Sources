@@ -254,6 +254,25 @@
       "description": "关掉后，歌曲详情页左下角的 MV 面板不再带这个按钮；侧栏「MV 背景」页和播放栏的 MV 按钮不受影响。",
       "default": true
     },
+    "mvLibraryPlaylists": {
+      "type": "boolean",
+      "title": "保存歌单时写入 ECHO 收藏与歌单 / Write saved playlists into ECHO's library",
+      "description": "开启后，「保存到本地」会把歌单里的歌曲同时加进 ECHO 自带的「收藏与歌单」，可以在软件的歌单页直接播放。",
+      "default": true
+    },
+    "mvEndBehaviour": {
+      "type": "string",
+      "title": "MV 播放完成后 / When the MV finishes",
+      "description": "MV 播完之后背景怎么处理。pause：停下来停在最后一帧（默认）；loop：从头循环；colour：换成纯色背景。",
+      "enum": ["pause", "loop", "colour"],
+      "default": "pause"
+    },
+    "mvEndColour": {
+      "type": "string",
+      "title": "纯色背景颜色 / Solid background colour",
+      "description": "「MV 播放完成后」选「纯色背景」时使用的颜色，格式 #RRGGBB。",
+      "default": "#000000"
+    },
     "tidalClientId": {
       "type": "string",
       "title": "TIDAL Client ID",

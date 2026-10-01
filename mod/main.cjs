@@ -83,6 +83,9 @@ const MV_SETTING_KEYS = [
   'mvReplayAudioOnChange',
   'mvMaxQuality',
   'mvAllow60fps',
+  // Renderer-only keys, mirrored for the same reason as the picture keys above.
+  'mvEndBehaviour',
+  'mvEndColour',
 ];
 
 const mvSettingsPatch = (settings) => {
@@ -168,6 +171,12 @@ const MV_DEFAULTS = {
   mvReplayAudioOnChange: true,
   mvMaxQuality: 'max',
   mvAllow60fps: true,
+  // What the background does when the MV runs out: stop on the last frame, keep
+  // looping, or swap the picture for a plain colour.
+  mvEndBehaviour: 'pause',
+  mvEndColour: '#000000',
+  // Saving a playlist also writes it into ECHO's own favourites & playlists.
+  mvLibraryPlaylists: true,
   // Background video pipeline: the video is resolved by the community MV engine
   // and streamed through this process (no download step).
   // `score` by default: every candidate list is scored by the renderer (see
@@ -803,12 +812,44 @@ module.exports.activate = async (host) => {
             linkUrl: typeof payload?.linkUrl === 'string' ? payload.linkUrl.slice(0, 2000) : null,
             trackCount: tracks.length,
             savedAt: new Date().toISOString(),
+            // The ECHO-library playlist this copy mirrors, so saving again updates
+            // that playlist instead of creating another one.
+            libraryPlaylistId: typeof payload?.libraryPlaylistId === 'string' && payload.libraryPlaylistId.trim()
+              ? payload.libraryPlaylistId.trim().slice(0, 200)
+              : null,
             tracks,
           },
         });
         const saved = writePlaylistStore({ ...store, collections });
         log('INFO', `playlist store: kept ${tracks.length} tracks for ${key}`);
         return { ok: true, result: { collections: saved.collections, savedAt: saved.updatedAt } };
+      } catch (error) {
+        return { ok: false, error: error instanceof Error ? error.message : String(error) };
+      }
+    },
+
+    /**
+     * Records which ECHO-library playlist a mod playlist was written into.
+     *
+     * The renderer creates/updates the library playlist itself (through
+     * `window.echo.library`), so this only stores the mapping — the local store
+     * stays the source of truth for what the page shows.
+     */
+    playlistStoreLinkLibrary: async (payload) => {
+      try {
+        const key = String(payload?.key || '').trim();
+        const libraryPlaylistId = String(payload?.libraryPlaylistId || '').trim();
+        if (!key || !libraryPlaylistId) throw new Error('key and libraryPlaylistId are required');
+        const store = readPlaylistStore();
+        const previous = store.collections[key];
+        if (!previous) throw new Error('unknown playlist');
+        const collections = {
+          ...store.collections,
+          [key]: { ...previous, libraryPlaylistId: libraryPlaylistId.slice(0, 200) },
+        };
+        const saved = writePlaylistStore({ ...store, collections });
+        log('INFO', `playlist store: ${key} mirrored into ECHO playlist ${libraryPlaylistId}`);
+        return { ok: true, result: { collections: saved.collections } };
       } catch (error) {
         return { ok: false, error: error instanceof Error ? error.message : String(error) };
       }

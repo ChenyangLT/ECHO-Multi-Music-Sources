@@ -105,6 +105,16 @@ const STRINGS = {
     playlistsRemoved: '已取消本地保存',
     playlistsReimport: '重新获取',
     playlistsSaved: (count) => `已保存到本地：${count}`,
+    // Writing the same playlist into ECHO's own library (收藏与歌单).
+    mvLibraryPlaylists: '保存歌单时同时写入 ECHO 收藏与歌单',
+    libraryPlaylistsHint: '开启后，「保存到本地」会把歌单里的歌曲也加进 ECHO 自己的「收藏与歌单」，在软件的歌单页里就能直接播放。',
+    libraryPlaylistDescription: '由「多平台音源」插件保存',
+    libraryUpdate: '更新',
+    libraryUpdateHint: '把歌单里的歌曲重新写入 ECHO 收藏与歌单（用于同步新增或删除的歌曲）',
+    libraryUpdating: '正在更新歌单…',
+    libraryUpdated: (count) => `已更新到 ECHO 收藏与歌单：${count}`,
+    libraryUpdateNoTracks: '这个歌单还没有保存过歌曲，先保存到本地再更新',
+    libraryUnavailable: '当前版本读不到 ECHO 收藏与歌单，只能保存在插件本地',
     playlistsFromLocal: '来自本地保存',
     playlistsClearLocal: '清除本地歌单',
     playlistsCleared: '已清除本地保存的歌单',
@@ -176,15 +186,15 @@ const STRINGS = {
     loadingCandidates: '正在获取候选…',
     candidatesFor: (title) => `当前歌曲：${title}`,
     candidatesEmpty: '还没有候选：点上面的「为当前歌曲匹配候选」，或直接在下面粘贴视频链接。',
-    titleSearchLabel: '按标题搜索 B 站',
-    titleSearchHint: '用这里输入的标题直接搜 B 站，不经过「歌名 + 艺人 +」这套自动查询；结果可以像其它候选一样绑定到当前歌曲。',
-    titleSearchPlaceholder: '输入要搜索的标题，回车即可',
-    titleSearchPlaceholderTrack: (title) => `默认用歌名：${title}`,
-    titleSearchAction: '搜索',
-    titleSearching: '按标题搜索中…',
-    titleSearchEmpty: '请输入要搜索的标题',
-    titleSearchFound: (n) => `找到 ${n} 个候选`,
-    titleSearchShown: (query, n) => `「${query}」的搜索结果（${n} 个）`,
+    browserSearchLabel: '在 B 站自己搜',
+    browserSearchHint: '把「歌名 艺人」复制到剪贴板，并用浏览器打开 B 站的搜索结果页——自己挑一条，再把链接粘到下面的自定义链接里绑定给这首歌。',
+    searchOnBilibili: '复制歌名并打开 B 站',
+    copySongName: '只复制歌名',
+    copySongNameDone: (text) => `已复制：${text}`,
+    copySongNameFailed: '复制失败，请手动选中歌名复制',
+    searchOnBilibiliOpened: '已打开 B 站搜索',
+    searchOnBilibiliOpenedCopied: (text) => `已复制「${text}」并打开 B 站搜索，粘贴即可`,
+    openBrowserFailed: '打不开浏览器，链接已复制，可以手动粘贴',
     candidatesShown: (count) => `候选 ${count} 个（可在下面调整数量）`,
     candidateCount: '候选数量',
     candidateCountHint: '自动匹配取前几个结果，也决定候选列表显示多少个（2–20）。',
@@ -196,7 +206,9 @@ const STRINGS = {
     refreshStatus: '刷新状态',
     fileMissing: '文件不存在',
     immersive: '沉浸式 MV 背景',
+    immersiveHint: '开启后，歌曲详情页用当前 MV 作为背景。',
     autoScale: '自动缩放',
+    autoScaleHint: '根据 MV 宽高自动补偿缩放，尽量避免背景黑边。',
     preset: '画面预设',
     presetCustom: '自定义',
     presetFitWidth: '默认（左右贴合）',
@@ -222,17 +234,37 @@ const STRINGS = {
     brightness: '背景亮度',
     overlay: '暗色遮罩',
     readability: '歌词可读性增强',
+    readabilityHint: '为沉浸式 MV 上的歌词增加描边和投影。',
     hideLyrics: 'MV 播放时隐藏歌词',
+    hideLyricsHint: '开启后 MV 界面上不显示歌词文本。',
     threshold: '匹配度阈值',
     autoSearch: '自动搜索网络 MV',
+    autoSearchHint: '候选达到阈值以上才会自动应用。',
     autoPreload: '预加载 MV',
+    autoPreloadHint: '只要开始播放歌曲，就提前查找并准备这首歌的 MV。',
     titleOnly: '只用歌曲名搜索',
+    titleOnlyHint: '开启后只用歌曲名；关闭后使用歌曲名和歌手。',
     searchSuffix: '搜索后缀',
+    searchSuffixHint: '追加在查询词后面的关键词；留空则不加。',
     followProgress: 'MV 跟随音乐进度',
+    followProgressHint: '开启后持续校准 MV 视频时间，不会 seek 或重启音频。',
     syncMode: '同步模式',
+    syncModeHint: '轻微偏差用变速追平，大偏差才跳转视频。',
     replayOnChange: '切换 MV 后从头对齐',
+    replayOnChangeHint: '手动选择或绑定新的 MV 会重新播放当前歌曲，让新 MV 立即生效。',
     quality: 'MV 最高画质',
     allow60fps: '允许 60fps',
+    sectionCollapse: '折叠这一节',
+    sectionExpand: '展开这一节',
+    syncHint: 'MV 与歌曲时间差的校准方式。',
+    endBehaviour: 'MV 播放完成后',
+    endBehaviourHint: 'MV 播完之后背景怎么处理；默认停下来停在最后一帧。',
+    endLoop: '循环播放',
+    endPause: '暂停（停在最后一帧）',
+    endColour: '纯色背景',
+    endColourLabel: '纯色颜色',
+    endColourHint: '「MV 播放完成后」选「纯色背景」时使用的颜色。',
+    backdropEnded: 'MV 已播放完成',
     preview: '预览',
     previewHint: '预览会在歌词页里立刻播放这个视频',
     engineTitle: '社区版 MV 引擎',
@@ -365,6 +397,15 @@ const STRINGS = {
     playlistsRemoved: 'Removed the local copy',
     playlistsReimport: 'Re-fetch',
     playlistsSaved: (count) => `Saved locally: ${count}`,
+    mvLibraryPlaylists: 'Also write saved playlists into ECHO\'s favourites & playlists',
+    libraryPlaylistsHint: 'With this on, "Save locally" also adds the playlist\'s tracks to ECHO\'s own library, so it can be played from the app\'s playlist page.',
+    libraryPlaylistDescription: 'Saved by the Multi Music Sources plugin',
+    libraryUpdate: 'Update',
+    libraryUpdateHint: 'Writes the playlist\'s tracks into ECHO\'s favourites & playlists again (use it after songs were added or removed)',
+    libraryUpdating: 'Updating the playlist…',
+    libraryUpdated: (count) => `Updated in ECHO's library: ${count}`,
+    libraryUpdateNoTracks: 'This playlist has no saved songs yet — save it locally first',
+    libraryUnavailable: 'This build does not expose ECHO\'s library, so the playlist stays local to the plugin',
     playlistsFromLocal: 'from the local copy',
     playlistsClearLocal: 'Clear local playlists',
     playlistsCleared: 'Cleared the locally kept playlists',
@@ -436,15 +477,15 @@ const STRINGS = {
     loadingCandidates: 'Loading candidates…',
     candidatesFor: (title) => `Current song: ${title}`,
     candidatesEmpty: 'No candidates yet: use "Find candidates for the current song" above, or paste a video link below.',
-    titleSearchLabel: 'Search Bilibili by title',
-    titleSearchHint: 'Searches Bilibili with exactly this title instead of the automatic "song + artist + suffix" query; a result can be bound to the current song like any other candidate.',
-    titleSearchPlaceholder: 'Type a title and press Enter',
-    titleSearchPlaceholderTrack: (title) => `Defaults to the song title: ${title}`,
-    titleSearchAction: 'Search',
-    titleSearching: 'Searching by title…',
-    titleSearchEmpty: 'Type a title to search for',
-    titleSearchFound: (n) => `${n} candidate(s) found`,
-    titleSearchShown: (query, n) => `Results for "${query}" (${n})`,
+    browserSearchLabel: 'Search on Bilibili yourself',
+    browserSearchHint: 'Copies "song artist" to the clipboard and opens Bilibili\'s search in the browser — pick one yourself, then paste its link into the custom link field below to bind it to this song.',
+    searchOnBilibili: 'Copy the song and open Bilibili',
+    copySongName: 'Copy the song name only',
+    copySongNameDone: (text) => `Copied: ${text}`,
+    copySongNameFailed: 'Copy failed — select the song name and copy it manually',
+    searchOnBilibiliOpened: 'Bilibili search opened',
+    searchOnBilibiliOpenedCopied: (text) => `Copied "${text}" and opened Bilibili — just paste it`,
+    openBrowserFailed: 'Could not open the browser; the link is copied, paste it manually',
     candidatesShown: (count) => `${count} candidate(s) — adjust the count below`,
     candidateCount: 'Candidate count',
     candidateCountHint: 'How many search results auto-matching and the list below use (2–20).',
@@ -482,17 +523,37 @@ const STRINGS = {
     brightness: 'Background brightness',
     overlay: 'Dark overlay',
     readability: 'Enhanced lyrics readability',
+    readabilityHint: 'Adds an outline and a shadow to the lyrics over the MV.',
     hideLyrics: 'Hide lyrics while the MV plays',
+    hideLyricsHint: 'The MV view shows no lyric text while this is on.',
     threshold: 'Match threshold',
     autoSearch: 'Auto-search online MV',
+    autoSearchHint: 'A candidate is only applied automatically at or above the threshold.',
     autoPreload: 'Preload MV',
+    autoPreloadHint: 'Looks the MV up as soon as a song starts playing.',
     titleOnly: 'Search by title only',
+    titleOnlyHint: 'On: the song title alone. Off: title and artist.',
     searchSuffix: 'Search suffix',
+    searchSuffixHint: 'Appended to the query; leave empty to add nothing.',
     followProgress: 'Follow the music progress',
+    followProgressHint: 'Keeps the video time calibrated without seeking or restarting the audio.',
     syncMode: 'Sync mode',
+    syncModeHint: 'Small drift is corrected by speed, only a large one jumps the video.',
     replayOnChange: 'Align the MV to the song start',
+    replayOnChangeHint: 'Picking or binding a new MV replays the current song so it takes effect at once.',
     quality: 'MV max quality',
     allow60fps: 'Allow 60fps',
+    sectionCollapse: 'Collapse this section',
+    sectionExpand: 'Expand this section',
+    syncHint: 'How the MV and the song are kept in step.',
+    endBehaviour: 'When the MV finishes',
+    endBehaviourHint: 'What the background does once the video runs out. Default: stop on the last frame.',
+    endLoop: 'Loop it',
+    endPause: 'Pause (hold the last frame)',
+    endColour: 'Solid colour',
+    endColourLabel: 'Colour',
+    endColourHint: 'The colour used by the "solid colour" choice above.',
+    backdropEnded: 'The MV has finished',
     preview: 'Preview',
     previewHint: 'Preview plays this video on the lyrics page right away',
     engineTitle: 'Community MV engine',
@@ -720,7 +781,6 @@ const state = {
   backgroundTest: null,
   backgroundTestFor: null,
   // The manual Bilibili search by title (the settings page's own query).
-  titleSearch: null,
   // The signed-in account's own playlists / favourite folders (歌单 view).
   playlists: null,
   // NetEase 每日推荐: previewed as a group on the 歌单 page, opened as a detail.
@@ -783,8 +843,28 @@ const button = (className, label, onClick, options = {}) => {
   node.type = 'button';
   if (options.title) node.title = options.title;
   if (options.disabled) node.disabled = true;
-  if (onClick) node.addEventListener('click', onClick);
+  if (onClick) {
+    node.addEventListener('click', (event) => {
+      markButtonFeedback(node);
+      onClick(event);
+    });
+  }
   return node;
+};
+
+/**
+ * Flashes a button for a moment after it was pressed.
+ *
+ * The stylesheet keys on `data-feedback`, so this is pure presentation: a press
+ * tints the button, sinks it and shows a tick without changing what the click did.
+ */
+const FEEDBACK_MS = 420;
+const markButtonFeedback = (node) => {
+  if (!node?.dataset || node.dataset.feedback === 'true') return;
+  node.dataset.feedback = 'true';
+  setTimeout(() => {
+    if (node.dataset) node.dataset.feedback = 'false';
+  }, FEEDBACK_MS);
 };
 
 const formatDuration = (seconds) => {
@@ -1364,6 +1444,128 @@ const refreshAccountCollection = async () => {
 const collectionSourceOf = (entry) => (entry?.kind === 'link' ? 'link' : 'account');
 
 /** Keeps one playlist's tracks locally; returns the stored record (or null). */
+/**
+ * ECHO's own library, as exposed to the renderer.
+ *
+ * The preload always exposes `library` (`contextBridge.exposeInMainWorld('echo', …)`)
+ * and the loader hands the real object to mods, so a saved playlist can be written
+ * into the app's own 收藏与歌单 instead of staying in the mod's private store. Every
+ * call is guarded: an older host without the namespace keeps the local store only.
+ */
+const echoLibrary = () => external?.echo?.library || window.echo?.library || null;
+
+/** The provider ids ECHO's library accepts for a streaming track. */
+const LIBRARY_PROVIDERS = new Set(['netease', 'qqmusic', 'kugou', 'bilibili', 'youtube', 'soundcloud', 'spotify', 'tidal', 'qobuz']);
+
+/** One of the mod's tracks in the shape ECHO's library stores. */
+const libraryTrackPayload = (track) => {
+  const provider = String(track?.provider || '').toLowerCase();
+  const providerTrackId = String(track?.providerTrackId || track?.id || '').trim();
+  const title = String(track?.title || '').trim();
+  if (!LIBRARY_PROVIDERS.has(provider) || !providerTrackId || !title) return null;
+  const stableKey = String(track?.stableKey || `streaming:${provider}:${providerTrackId}`);
+  return {
+    id: String(track?.id || stableKey),
+    stableKey,
+    provider,
+    providerTrackId,
+    title,
+    artist: String(track?.artist || '').trim() || undefined,
+    album: track?.album ? String(track.album) : undefined,
+    duration: Number(track?.duration) || undefined,
+    unavailable: track?.playable === false ? true : undefined,
+  };
+};
+
+/** The library playlist that mirrors this mod playlist, if it was ever created. */
+const libraryPlaylistFor = (key) => {
+  const stored = state.playlistStore?.collections?.[key];
+  const id = String(stored?.libraryPlaylistId || '').trim();
+  return id || null;
+};
+
+/**
+ * Writes a playlist's tracks into ECHO's own library.
+ *
+ * The playlist is created once and then reused: the mapping is kept in the mod's
+ * store (`libraryPlaylistId`), so saving again updates the same playlist instead of
+ * piling up copies. Returns the playlist id, or null when the library is not
+ * reachable (an older host) or nothing could be written.
+ */
+const syncPlaylistToEchoLibrary = async (key, name, tracks) => {
+  const library = echoLibrary();
+  if (!library?.addStreamingTrackToPlaylist) return null;
+  const wanted = (Array.isArray(tracks) ? tracks : []).map(libraryTrackPayload).filter(Boolean);
+  if (!wanted.length) return null;
+
+  let playlistId = libraryPlaylistFor(key);
+  try {
+    if (!playlistId) {
+      if (typeof library.getPlaylists === 'function' && name) {
+        // Reuse a playlist this mod made earlier under the same name, so a reinstall
+        // (which loses the mapping) does not create a duplicate.
+        const all = await library.getPlaylists().catch(() => null);
+        const list = Array.isArray(all) ? all : (all?.playlists || []);
+        const match = list.find((item) => String(item?.name || '').trim() === String(name).trim());
+        if (match?.id) playlistId = String(match.id);
+      }
+      if (!playlistId && typeof library.createPlaylist === 'function') {
+        const created = await library.createPlaylist({ name: String(name || copy.myPlaylists), description: copy.libraryPlaylistDescription });
+        playlistId = String(created?.id || '');
+      }
+    }
+    if (!playlistId) return null;
+
+    let written = 0;
+    for (const track of wanted) {
+      try {
+        await library.addStreamingTrackToPlaylist(playlistId, track);
+        written += 1;
+      } catch {
+        /* one track failing (a removed upload, an unsupported provider) must not
+           stop the rest of the playlist from being written */
+      }
+    }
+    if (!written) return null;
+    // Remember the mapping so the next save updates this playlist.
+    if (key) {
+      const previous = state.playlistStore?.collections?.[key] || {};
+      state.playlistStore = {
+        ...(state.playlistStore || {}),
+        ready: true,
+        collections: { ...(state.playlistStore?.collections || {}), [key]: { ...previous, libraryPlaylistId: playlistId } },
+      };
+      void invokeMain('playlistStoreLinkLibrary', { key, libraryPlaylistId: playlistId }).catch(() => null);
+    }
+    return playlistId;
+  } catch {
+    /* the library is a bonus: the local store already has the playlist */
+    return null;
+  }
+};
+
+/** Pushes an already saved playlist into the library again (the 更新 button). */
+const updatePlaylistInLibrary = async (entry) => {
+  const key = playlistStoreKeyOf(entry);
+  const stored = state.playlistStore?.collections?.[key];
+  const tracks = Array.isArray(stored?.tracks) ? stored.tracks : [];
+  if (!tracks.length) {
+    reportNotice(copy.libraryUpdateNoTracks);
+    return false;
+  }
+  state.busy = copy.libraryUpdating;
+  renderSoon();
+  try {
+    const playlistId = await syncPlaylistToEchoLibrary(key, stored?.name || entry?.title || entry?.name, tracks);
+    if (playlistId) reportNotice(copy.libraryUpdated(countLabel(tracks.length)));
+    else reportNotice(copy.libraryUnavailable);
+    return Boolean(playlistId);
+  } finally {
+    state.busy = null;
+    renderSoon();
+  }
+};
+
 const savePlaylistCollection = async (key, provider, detail, tracks, entry = null) => {
   const source = collectionSourceOf(entry || detail?.accountEntry);
   try {
@@ -1378,9 +1580,15 @@ const savePlaylistCollection = async (key, provider, detail, tracks, entry = nul
       description: detail?.description || '',
       coverUrl: detail?.coverUrl || null,
       tracks,
+      // Kept so a later save updates the same library playlist.
+      libraryPlaylistId: libraryPlaylistFor(key),
     });
     if (saved?.collections && typeof saved.collections === 'object') {
       state.playlistStore = { ...(state.playlistStore || {}), ready: true, collections: saved.collections };
+      // ECHO's own 收藏与歌单, so the playlist shows up in the app's library too.
+      if (config.mvLibraryPlaylists !== false) {
+        await syncPlaylistToEchoLibrary(key, detail?.name, tracks);
+      }
       return saved.collections[key] || null;
     }
   } catch {
@@ -1680,6 +1888,11 @@ let pageRoot = null;
 // The 「MV 背景」 sidebar page has its own root: the two pages live side by side in
 // the sidebar and must not overwrite each other's DOM.
 let backgroundPageRoot = null;
+// How long a rebuild waits after the user's last pointer/keyboard event, so a
+// press cannot be swallowed by the page being replaced mid-click.
+const BACKGROUND_PAGE_SETTLE_MS = 650;
+let backgroundPageLastInput = 0;
+let backgroundPageBuild = 0;
 
 /**
  * Cover images are sometimes only published over plain `http:` (Bilibili's
@@ -1789,6 +2002,12 @@ const backgroundConfig = () => {
     // Whether the song detail page offers its ⚙ 设置 button (the one that opens
     // the full MV settings drawer). On by default.
     showSettingsButton: config.mvShowSettingsButton !== false,
+    // What the background does when the MV runs out: keep looping it, stop on the
+    // last frame, or drop the picture and show a plain colour.
+    endBehaviour: ['loop', 'pause', 'colour'].includes(config.mvEndBehaviour) ? config.mvEndBehaviour : 'pause',
+    endColour: typeof config.mvEndColour === 'string' && /^#[0-9a-fA-F]{6}$/u.test(config.mvEndColour.trim())
+      ? config.mvEndColour.trim()
+      : '#000000',
     // How many search results the automatic match considers and the candidate
     // list in the settings page shows.
     candidateLimit: Math.round(clampNumber(config.mvCandidateLimit, 2, 20, 8)),
@@ -1917,6 +2136,10 @@ const backdrop = {
   // straight through to the progressive fallback.
   chosen: null,
   alternatives: [],
+  // Candidates this track already tried and gave up on (an unplayable stream, a
+  // candidate the poll could not resolve). A re-match for the same song skips
+  // them instead of cycling through the same videos again.
+  rejected: new Set(),
   // Tracks this session played, so the current track can be identified from the
   // player's status without re-reading ECHO's queue shape.
   known: new Map(),
@@ -2064,7 +2287,9 @@ const ensureBackdrop = () => {
 
   const video = h('video', 'mms-backdrop-video');
   video.muted = true;
-  video.loop = true;
+  // Only the "loop" end behaviour wants the element's own looping; the others are
+  // driven by the `ended` handler below.
+  video.loop = backgroundConfig().endBehaviour === 'loop';
   video.autoplay = true;
   video.playsInline = true;
   // Same preload hint ECHO-main's background <video> uses: metadata early, so the
@@ -2118,13 +2343,29 @@ const ensureBackdrop = () => {
   });
   video.addEventListener('ended', () => {
     if (backdrop.video !== video) return;
-    // ECHO-main keeps the MV background looping under the song.
+    // What happens when the MV runs out is the user's choice (mvEndBehaviour):
+    // loop it under the song, stop on the last frame, or drop the picture and show
+    // a plain colour. The default is to stop — a looping background that is really
+    // a 3-minute video restarting is the thing that reads as a glitch.
+    const behaviour = backgroundConfig().endBehaviour;
+    if (behaviour === 'loop') {
+      try {
+        video.currentTime = 0;
+        void video.play?.().catch(() => {});
+      } catch {
+        /* ignore */
+      }
+      return;
+    }
+    // pause / colour: hold the last frame (pause) or hide the picture and let the
+    // layer paint the chosen colour (the stylesheet keys on data-ended).
     try {
-      video.currentTime = 0;
-      void video.play?.().catch(() => {});
+      video.pause();
     } catch {
       /* ignore */
     }
+    if (node) node.dataset.ended = behaviour === 'colour' ? 'true' : 'false';
+    setBackdropMessage('notice', copy.backdropEnded, 'ended');
   });
   video.addEventListener('error', () => {
     if (backdrop.video !== video) return;
@@ -2195,11 +2436,16 @@ const updateBackdropStatus = () => {
   if (text) text.textContent = backdrop.message || '';
 };
 
-/** ECHO-main always loops the MV background under the song. */
+/**
+ * Keeps the `<video>` loop flag in step with the end behaviour.
+ *
+ * `loop` is the browser's own restart, so it is only set for the "loop" choice;
+ * every other choice needs the `ended` event (looping would never fire it).
+ */
 const syncBackdropLoop = () => {
   const video = backdrop.video;
   if (!video) return;
-  video.loop = true;
+  video.loop = backgroundConfig().endBehaviour === 'loop';
 };
 
 /** Below this a video is treated as a fragment rather than a whole MV. */
@@ -2252,7 +2498,8 @@ const ensureBackdropPanel = () => {
   };
   const settings = button('mms-mv-panel-action', copy.panelSettings, (event) => {
     event?.stopPropagation?.();
-    openBackdropDrawer();
+    // Toggles: pressing it while the drawer is open puts it away again.
+    toggleBackdropDrawer();
   });
   settings.title = copy.drawerTitle;
   const toggle = button('mms-mv-panel-action', '▾', (event) => {
@@ -2412,6 +2659,15 @@ const openBackdropDrawer = () => {
   bodyClicked(drawer);
 };
 
+/**
+ * The settings button toggles the drawer: pressing it while the drawer is already
+ * open closes it again, so one control both opens and puts the panel away.
+ */
+const toggleBackdropDrawer = () => {
+  if (backdrop.drawer?.dataset.open === 'true') closeBackdropDrawer();
+  else openBackdropDrawer();
+};
+
 const closeBackdropDrawer = () => {
   if (!backdrop.drawer) return;
   backdrop.drawer.dataset.open = 'false';
@@ -2516,7 +2772,7 @@ const renderBackdropPanelBody = (force = false) => {
     button('mms-ghost', settings.hideLyrics ? copy.panelShow : copy.panelHide, () => {
       void persistBackgroundSettings({ mvHideLyrics: !settings.hideLyrics });
     }),
-    button('mms-ghost', copy.panelSettings, () => openBackdropDrawer()),
+    button('mms-ghost', copy.panelSettings, () => toggleBackdropDrawer()),
   );
   if (matched?.url) {
     row.append(button('mms-ghost', copy.engineOpen, () => {
@@ -2696,6 +2952,8 @@ const applyBackdropStyle = () => {
   node.style.setProperty('--mms-immersive-blur', `${settings.blur}px`);
   node.style.setProperty('--mms-immersive-brightness', `${settings.brightness}%`);
   node.style.setProperty('--mms-immersive-overlay', (settings.overlay / 100).toFixed(2));
+  // The colour the layer paints in the "solid colour" end behaviour.
+  node.style.setProperty('--mms-ended-colour', settings.endColour);
 
   if (settings.hideLyrics && node.dataset.state === 'playing') {
     setHideLyricsFlag(true);
@@ -2888,7 +3146,13 @@ const takeNextCandidate = () => {
   const pool = Array.isArray(backdrop.alternatives) ? backdrop.alternatives : [];
   while (pool.length) {
     const next = pool.shift();
-    if (next?.id) return next;
+    if (!next?.id) continue;
+    // A candidate that already failed for this track is not offered again, or the
+    // failover would cycle between the same videos forever.
+    const key = String(next.bvid || next.id);
+    if (backdrop.rejected?.has?.(key)) continue;
+    backdrop.rejected?.add?.(key);
+    return next;
   }
   return null;
 };
@@ -2957,24 +3221,49 @@ const chooseBackdropCandidate = (candidates) => {
     return Number.isFinite(value) && value > 0 ? value : 0;
   };
 
-  const eligible = list.filter((item) => scoreOf(item) >= settings.threshold);
+  // The "confidence lead" the community's MvService requires before it applies a
+  // match on its own (MV_AUTO_MATCH_HIGH_CONFIDENCE / MV_AUTO_MATCH_MIN_MARGIN):
+  // either the leader is convincing by itself, or it beats the runner-up by a
+  // clear margin. Two candidates that score within a couple of points of each
+  // other are exactly the case where the pick flipped between reloads, so this
+  // round is left to the user (the list is on the page) instead.
+  const rank = (pool) => [...pool].sort((left, right) => {
+    const delta = scoreOf(right) - scoreOf(left);
+    if (delta !== 0) return delta;
+    return viewsOf(right) - viewsOf(left);
+  });
+  const confidentLead = (ranked) => {
+    const first = ranked[0];
+    if (!first) return false;
+    const second = ranked[1];
+    if (!second) return true;
+    return scoreOf(first) >= MV_AUTO_MATCH_HIGH_CONFIDENCE
+      || scoreOf(first) - scoreOf(second) >= MV_AUTO_MATCH_MIN_MARGIN;
+  };
+
+  // Rounds the user already turned down: retrying them on the next tick is what
+  // made the background cycle through the same wrong videos.
+  const rejected = backdrop.rejected;
+  const fresh = (item) => !rejected?.has?.(String(item.bvid || item.id));
+  let eligible = list.filter((item) => scoreOf(item) >= settings.threshold);
+  if (eligible.length && !eligible.some(fresh)) eligible = [];
   if (!eligible.length) return null;
 
   if (settings.matchMode === 'first') return eligible[0];
 
   if (settings.matchMode === 'score') {
-    return [...eligible].sort((left, right) => {
-      const delta = scoreOf(right) - scoreOf(left);
-      if (delta !== 0) return delta;
-      return viewsOf(right) - viewsOf(left);
-    })[0];
+    const ranked = rank(eligible);
+    return confidentLead(ranked) ? ranked[0] : null;
   }
 
-  return [...eligible].sort((left, right) => {
+  const byViews = [...eligible].sort((left, right) => {
     const delta = viewsOf(right) - viewsOf(left);
     if (delta !== 0) return delta;
     return scoreOf(right) - scoreOf(left);
-  })[0];
+  });
+  // The lead rule is judged on the score ranking, not on the view ranking: it is
+  // about how clear the MATCH is, not how popular the winner happens to be.
+  return confidentLead(rank(eligible)) ? byViews[0] : null;
 };
 
 /**
@@ -3029,6 +3318,12 @@ const playBackdropSource = (url, best, track, source) => {
   backdrop.source = source;
   backdrop.pendingTitle = best.title || track?.title || '';
   backdrop.ready = false;
+  // A new source clears the "the MV finished" state, so a colour left by the
+  // previous video cannot mask this one.
+  if (backdrop.node) {
+    backdrop.node.dataset.ended = 'false';
+    backdrop.node.dataset.source = 'ready';
+  }
   // The whiteboard: which track this video was matched for. Written on EVERY path
   // that puts a video into the layer (auto match, candidate apply, preview, bound
   // link/file) — a URL without an owner was read as "stale" by the supervisor and
@@ -3263,8 +3558,9 @@ const runBackdropSteps = async (steps, track, token) => {
   if (token === backdrop.lookupToken) {
     // Say which failure this was: nothing scored above the threshold (a matter of
     // tuning) reads very differently from a candidate that exists but cannot be
-    // played.
+    // played. A failed candidate is remembered so the next round does not retry it.
     const noCandidate = !backdrop.chosen && !backdrop.candidate;
+    if (backdrop.chosen?.id) backdrop.rejected?.add?.(String(backdrop.chosen.bvid || backdrop.chosen.id));
     setBackdropMessage(
       'error',
       backdrop.lastError || (noCandidate ? copy.backdropNoCandidate : copy.backdropNoStream),
@@ -3339,7 +3635,11 @@ const loadBackdropFor = async (track) => {
     setBackdropMessage('error', copy.backdropNoTitle, 'no-title');
     return false;
   }
-  backdrop.searchOwner = String(trackKey(track));
+  const owner = String(trackKey(track));
+  // A different song starts with a clean slate: the candidates the previous track
+  // gave up on say nothing about this one.
+  if (backdrop.searchOwner !== owner) backdrop.rejected = new Set();
+  backdrop.searchOwner = owner;
   setBackdropMessage('searching', `${copy.backdropSearchingFor(query)}`);
 
   // A video the user bound to this song (a candidate they picked or a custom
@@ -3434,7 +3734,13 @@ const currentTrackFromStatus = (status) => {
   if (known) {
     const sameSong = !fresh
       || ((!fresh.title || fresh.title === known.title) && (!fresh.artist || fresh.artist === known.artist));
-    if (sameSong) return known;
+    if (sameSong) {
+      // The cached entry is what the player is playing, so it is what the pages
+      // read. Without this the 「MV 背景」 page only ever saw the tracks the poll
+      // happened to re-register, and kept the previous song after a change.
+      state.lastTrack = known;
+      return known;
+    }
     // The id was reused by a different song: fall through and re-register the
     // track the status describes, so the match is made for what is playing now.
   }
@@ -3616,9 +3922,35 @@ const alignBackdropToAudio = async ({ force = false, restart = false } = {}) => 
 // overlap when the user skips tracks quickly).
 let backdropPollEpoch = 0;
 
+/**
+ * Reads the playing track from the player and registers it.
+ *
+ * The 「MV 背景」 page shows 当前歌曲 and that song's candidates, so it needs the
+ * track that is playing even when the MV background itself is switched off or the
+ * song detail page is not open — the two cases where pollBackdrop() returns before
+ * it would otherwise read the status. Without this the page kept the previous
+ * song (and its candidates) after a track change.
+ */
+const refreshPlayingTrack = async () => {
+  const player = playerApi();
+  if (!player?.status) return null;
+  let status = null;
+  try {
+    status = await player.status();
+  } catch {
+    return null;
+  }
+  const id = status?.currentTrackId ?? status?.trackId ?? null;
+  return id ? currentTrackFromStatus(status) : null;
+};
+
 const pollBackdrop = async () => {
   const epoch = ++backdropPollEpoch;
   const retired = () => epoch !== backdropPollEpoch;
+  // The page follows the player whether or not the background is on, so the
+  // track is read before the paths that do not care about the MV.
+  await refreshPlayingTrack().catch(() => null);
+  if (retired()) return;
   if (!backdropEnabled()) {
     syncPlayerToggle();
     return;
@@ -3935,6 +4267,14 @@ const persistBackgroundSettings = async (patch, options = {}) => {
 // per-package store is missing.
 
 const STORED_CONFIG_KEY = 'echo.mms.user-config.v2';
+// Which settings sections the user expanded or collapsed (UI state, not a mod
+// setting, so it stays out of the config the user can export).
+const SECTION_STATE_KEY = 'echo.mms.section-state.v1';
+// The community MvService only applies a match on its own when the leader is
+// convincing (score alone) or clearly ahead of the runner-up (margin). Below both,
+// two candidates are effectively tied and a choice would just flip between them.
+const MV_AUTO_MATCH_HIGH_CONFIDENCE = 0.86;
+const MV_AUTO_MATCH_MIN_MARGIN = 0.08;
 // A guard against unbounded growth: values are primitives, so this is plenty.
 const STORED_CONFIG_MAX_BYTES = 200_000;
 
@@ -4074,7 +4414,10 @@ const syncStoredConfigToMain = async () => {
 // transport-media-button`), which also keeps the button out of the
 // `max-width:1180px` rule that hides `transport-tool-button`.
 const PLAYER_TOGGLE_CLASS = 'mms-backdrop-toggle';
-const BACKDROP_ICON = '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m10 9 5 3-5 3z"/></svg>';
+// The community build's transport MV button is a lucide Clapperboard at 18px with
+// a 1.8 stroke (PlayerTransport.tsx). Inlined here because this renderer has no
+// icon library: same viewBox, same size/stroke, so the glyph matches.
+const BACKDROP_ICON = '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.2 6 3 11l-.9-2.4c-.3-1.1.3-2.2 1.3-2.5l13.5-4c1.1-.3 2.2.3 2.5 1.3Z"/><path d="m6.2 5.3 3.1 3.9"/><path d="m12.4 3.4 3.1 4"/><path d="M3 11h18v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg>';
 
 const transportBar = () => document.querySelector('.player-bar .player-transport-shell > .transport')
   || document.querySelector('.player-bar .player-transport-shell .transport')
@@ -5297,11 +5640,93 @@ const bgLinkBinding = (onSubmit) => {
   return wrap;
 };
 
-const bgSection = (title, hint) => {
+/**
+ * One settings section, shaped like the community build's drawer sections.
+ *
+ * The community build groups its MV settings into `<section>`s whose title row
+ * carries an icon, the name and a chevron that expands/collapses the controls
+ * (MvSettingsDrawer.tsx, `audio-drawer-section-title` + `mv-section-collapse`).
+ * The section object it returns IS the body: callers append their rows to it, and
+ * `body` is what the chevron hides.
+ *
+ * `options.defaultOpen` decides the first state, `options.id` is what the state is
+ * remembered under (so a section the user collapsed stays collapsed across
+ * rebuilds and restarts).
+ */
+const bgSection = (title, hint, options = {}) => {
   const node = h('section', 'mms-bg-section');
-  node.append(h('h3', 'mms-bg-title', title));
-  if (hint) node.append(h('p', 'mms-muted', hint));
+  node.dataset.section = options.id || '';
+  const id = String(options.id || title || '');
+  const defaultOpen = options.defaultOpen !== false;
+  const open = sectionOpenState(id, defaultOpen);
+  node.dataset.open = String(open);
+
+  const head = h('div', 'mms-bg-section-head');
+  const titleWrap = h('div', 'mms-bg-section-title');
+  titleWrap.append(h('h3', 'mms-bg-title', title));
+  if (hint) titleWrap.append(h('p', 'mms-muted', hint));
+  const chevron = h('button', 'mms-bg-section-toggle');
+  chevron.type = 'button';
+  chevron.setAttribute('aria-expanded', String(open));
+  chevron.title = open ? copy.sectionCollapse : copy.sectionExpand;
+  chevron.setAttribute('aria-label', chevron.title);
+  chevron.append(h('span', 'mms-bg-chevron', '▾'));
+  chevron.addEventListener('click', (event) => {
+    event.stopPropagation();
+    markButtonFeedback(chevron);
+    const next = node.dataset.open !== 'true';
+    node.dataset.open = String(next);
+    chevron.setAttribute('aria-expanded', String(next));
+    chevron.title = next ? copy.sectionCollapse : copy.sectionExpand;
+    chevron.setAttribute('aria-label', chevron.title);
+    setSectionOpenState(id, next);
+  });
+  head.append(titleWrap, chevron);
+  node.append(head);
+
+  const body = h('div', 'mms-bg-section-body');
+  node.append(head, body);
+  // Rows go into the body; the returned node keeps `append` working as before so
+  // existing callers do not have to change. `bodyElement` is what a caller that
+  // wants the body itself reads.
+  node.bodyElement = body;
+  node.append = (...children) => {
+    body.append(...children);
+    return node;
+  };
   return node;
+};
+
+/** The remembered open/collapsed state of one settings section. */
+const sectionOpenState = (id, fallback) => {
+  if (!id) return fallback;
+  const stored = sectionState()[id];
+  return typeof stored === 'boolean' ? stored : fallback;
+};
+
+let sectionStateCache = null;
+
+const sectionState = () => {
+  if (sectionStateCache) return sectionStateCache;
+  let parsed = {};
+  try {
+    parsed = readJsonRecord(localStorage.getItem(SECTION_STATE_KEY) || '{}');
+  } catch {
+    parsed = {};
+  }
+  sectionStateCache = parsed;
+  return sectionStateCache;
+};
+
+const setSectionOpenState = (id, open) => {
+  if (!id) return;
+  const next = { ...sectionState(), [id]: open === true };
+  sectionStateCache = next;
+  try {
+    localStorage.setItem(SECTION_STATE_KEY, JSON.stringify(next));
+  } catch {
+    /* a host without storage just keeps the sections in their default state */
+  }
 };
 
 /** The picture-preset dropdown: picking one writes its keys and re-renders. */
@@ -5533,58 +5958,73 @@ const mergedBackdropCandidates = () => {
   return [...byBvid.values()];
 };
 
+/** The song text that goes into the clipboard / Bilibili's search box. */
+const songSearchText = (track) => {
+  const title = String(track?.title || '').trim();
+  const artist = String(track?.artist || '').trim();
+  return [title, artist].filter(Boolean).join(' ');
+};
+
+/** Copies a string, preferring the async clipboard and falling back to a textarea. */
+const copyToClipboard = async (text) => {
+  const value = String(text || '');
+  if (!value) return false;
+  try {
+    if (navigator?.clipboard?.writeText) {
+      await navigator.clipboard.writeText(value);
+      return true;
+    }
+  } catch {
+    /* the document fallback below is the one that works on some hosts */
+  }
+  try {
+    const area = h('textarea', 'mms-copy-area');
+    area.value = value;
+    document.body.append(area);
+    area.select?.();
+    const ok = typeof document.execCommand === 'function' ? document.execCommand('copy') : false;
+    area.remove();
+    return ok === true;
+  } catch {
+    return false;
+  }
+};
+
+/** Copies the playing song's 「歌名 艺人」 so it can be pasted anywhere. */
+const copySongName = async (track) => {
+  const text = songSearchText(track);
+  if (!text) {
+    reportNotice(copy.testMatchNeedTrack);
+    return false;
+  }
+  const ok = await copyToClipboard(text);
+  reportNotice(ok ? copy.copySongNameDone(text) : copy.copySongNameFailed);
+  return ok;
+};
+
 /**
- * A Bilibili search by a title the user typed, independent of the playing song.
+ * Opens Bilibili's own search for the playing song in the browser.
  *
- * The automatic match derives its query from the song (title + artist + suffix),
- * which is wrong surprisingly often for covers, live versions, and songs whose
- * title is not the video's. This searches exactly what was typed and lets the
- * result be bound to the current song like any other candidate.
+ * The song title (and artist) go to the clipboard first, so the search box can be
+ * filled with one paste — and a good result can be pasted back into the
+ * custom-link field below.
  */
-const searchBackdropByTitle = async (rawQuery) => {
-  const query = String(rawQuery || '').trim();
-  if (!query) {
-    reportNotice(copy.titleSearchEmpty);
+const searchSongOnBilibili = async (track) => {
+  const text = songSearchText(track);
+  if (!text) {
+    reportNotice(copy.testMatchNeedTrack);
     return;
   }
-  const track = state.lastTrack;
-  const limit = Math.max(backgroundConfig().candidateLimit, 8);
-  state.busy = copy.titleSearching;
-  renderSoon();
+  const copied = await copyToClipboard(text);
+  const url = `https://search.bilibili.com/video?keyword=${encodeURIComponent(text)}`;
   try {
-    let candidates = [];
-    if (track) {
-      // The engine searches for the current song but with the typed query, so its
-      // scoring, quality handling and persistence stay in play.
-      const snapshot = await invokeMain('mvSearchNetworkCandidatesForSnapshot', {
-        ...snapshotRequestFor(track, query),
-        query,
-      }).catch(() => null);
-      const list = Array.isArray(snapshot) ? snapshot : (snapshot?.candidates || []);
-      candidates = scoreCandidateList(list.slice(0, limit), track, query);
-      if (candidates.length) setBackdropCandidates(list.slice(0, limit), snapshotRequestFor(track, query), String(trackKey(track)));
-    }
-    if (!candidates.length) {
-      // No playing track (or the engine had nothing): a plain name search.
-      const payload = await invokeMain('findMvCandidates', { title: query, query, limit, mode: 'first' }).catch(() => null);
-      const list = Array.isArray(payload) ? payload : (payload?.candidates || []);
-      // A typed title IS the query here, so the score is how well the result
-      // contains it — no song metadata is involved in this mode.
-      candidates = list.slice(0, limit).map((item) => ({
-        ...item,
-        score: scoreMvCandidate(query, `${item?.title || ''} ${item?.uploader || ''}`),
-      }));
-    }
-    state.titleSearch = { for: track ? String(trackKey(track)) : '', query, result: { query, candidates } };
-    if (!candidates.length) reportNotice(copy.testNoMatch);
-    else reportNotice(copy.titleSearchFound(candidates.length));
-  } catch (error) {
-    reportError(error);
-  } finally {
-    state.busy = null;
-    renderSoon();
-    refreshBackgroundPage({ force: true });
+    if (typeof window.open === 'function') window.open(url, '_blank');
+    else external?.openExternal?.(url);
+  } catch {
+    reportError(new Error(copy.openBrowserFailed));
+    return;
   }
+  reportNotice(copied ? copy.searchOnBilibiliOpenedCopied(text) : copy.searchOnBilibiliOpened);
 };
 
 /** One candidate row: cover, title/uploader/score, and its actions. */
@@ -5632,7 +6072,7 @@ const renderBackgroundSettings = ({ masterSwitch = false } = {}) => {
   // The 「MV 背景」 page carries the master switch itself (the lyrics-page drawer is
   // only mounted while the background is on, so it does not need one).
   if (masterSwitch) {
-    const switchSection = bgSection(copy.enableBackdropRow, copy.enableBackdropHint);
+    const switchSection = bgSection(copy.enableBackdropRow, copy.enableBackdropHint, { id: 'enable' });
     const switchWrap = h('label', 'mms-switch');
     const input = h('input');
     input.type = 'checkbox';
@@ -5644,7 +6084,7 @@ const renderBackgroundSettings = ({ masterSwitch = false } = {}) => {
   }
 
   // ---- status ------------------------------------------------------------
-  const statusSection = bgSection(copy.backgroundStatus, copy.backgroundSubtitle);
+  const statusSection = bgSection(copy.backgroundStatus, copy.backgroundSubtitle, { id: 'status', defaultOpen: false });
   const statusGrid = h('div', 'mms-bg-status');
 
   const engineCard = h('div', 'mms-bg-card');
@@ -5674,7 +6114,7 @@ const renderBackgroundSettings = ({ masterSwitch = false } = {}) => {
   wrap.append(statusSection);
 
   // ---- matching ----------------------------------------------------------
-  const matchSection = bgSection(copy.matchMode, copy.matchModeHint);
+  const matchSection = bgSection(copy.matchMode, copy.matchModeHint, { id: 'match' });
   matchSection.append(bgRow(copy.matchMode, bgSelect('mvMatchMode', [
     ['first', copy.matchModeFirst],
     ['score', copy.matchModeScore],
@@ -5699,44 +6139,36 @@ const renderBackgroundSettings = ({ masterSwitch = false } = {}) => {
   testActions.append(button('mms-primary', copy.testMatch, () => void loadBackdropCandidates(state.lastTrack, {})));
   matchSection.append(testActions);
 
-  // Search Bilibili by a title the user types, instead of the song-derived query.
-  const searchValue = state.titleSearch?.query || (state.lastTrack?.title || '');
-  const titleInput = h('input', 'mms-search-input');
-  titleInput.type = 'text';
-  titleInput.placeholder = state.lastTrack?.title ? copy.titleSearchPlaceholderTrack(state.lastTrack.title) : copy.titleSearchPlaceholder;
-  titleInput.value = searchValue;
-  titleInput.setAttribute('aria-label', copy.titleSearchLabel);
-  const runTitleSearch = () => void searchBackdropByTitle(titleInput.value);
-  titleInput.addEventListener('keydown', (event) => {
-    if (event.key === 'Enter') {
-      event.preventDefault();
-      runTitleSearch();
-    }
-  });
-  const searchRow = h('div', 'mms-bg-offset');
-  searchRow.append(titleInput, button('mms-primary', copy.titleSearchAction, runTitleSearch));
-  matchSection.append(bgRow(copy.titleSearchLabel, searchRow, copy.titleSearchHint));
-  if (state.titleSearch?.result) {
-    const found = state.titleSearch.result.candidates || [];
-    matchSection.append(h('p', 'mms-muted', copy.titleSearchShown(state.titleSearch.result.query, found.length)));
-    const titleList = h('div', 'mms-bg-candidates');
-    for (const candidate of found.slice(0, Math.max(settings.candidateLimit, 8))) {
-      titleList.append(renderCandidateRow(candidate, { selectedBvid: bvidOf(state.mvSelected?.sourceId) }));
-    }
-    if (!titleList.children.length) titleList.append(h('p', 'mms-muted', copy.testNoMatch));
-    matchSection.append(titleList);
-  }
+  // Hand the search over to the browser instead of searching in here.
+  //
+  // A title typed into this panel went through the same provider search the mod
+  // already runs, so it could never score better than an automatic match (the
+  // scoring is what it is) — and its result then sat on the page for every later
+  // song. Copying the song out and opening Bilibili's search leaves the picking to
+  // the user, who can see the real thumbnails and titles, and the chosen link can
+  // be pasted straight into the custom-link field below.
+  const externalRow = h('div', 'mms-bg-offset');
+  externalRow.append(
+    button('mms-primary', copy.searchOnBilibili, () => void searchSongOnBilibili(state.lastTrack)),
+    button('mms-ghost', copy.copySongName, () => void copySongName(state.lastTrack)),
+  );
+  matchSection.append(bgRow(copy.browserSearchLabel, externalRow, copy.browserSearchHint));
 
   // Candidates for the playing track: clicking one remembers it for that song and
   // switches the background to it (seeked to the current song position). One list,
   // merged from the name search and the engine's scored search (see
   // mergedBackdropCandidates).
+  //
+  // The 「当前歌曲」 line is printed whenever a song is playing, even before its
+  // candidates have arrived: the page has to say WHICH song it is about to match,
+  // and hiding that line behind "there is a candidate list" made a track change
+  // look like nothing happened.
   const bound = boundVideoForTrack();
   const candidateResult = state.backgroundTest?.result;
   const mergedCandidates = mergedBackdropCandidates();
+  const playingTitle = state.lastTrack?.title || state.backgroundTest?.track?.title || '';
+  if (playingTitle) matchSection.append(h('p', 'mms-muted', copy.candidatesFor(playingTitle)));
   if (mergedCandidates.length || candidateResult) {
-    const title = state.backgroundTest?.track?.title || state.lastTrack?.title || '';
-    matchSection.append(h('p', 'mms-muted', title ? copy.candidatesFor(title) : copy.candidatesShown(mergedCandidates.length)));
     const list = h('div', 'mms-bg-candidates');
     const chosenBvid = bvidOf(candidateResult?.chosen?.id) || bvidOf(candidateResult?.chosen?.url);
     const boundBvid = bound ? bvidOf(bound.providerUrl || bound.url) : '';
@@ -5767,10 +6199,10 @@ const renderBackgroundSettings = ({ masterSwitch = false } = {}) => {
   wrap.append(matchSection);
 
   // ---- picture -----------------------------------------------------------
-  const pictureSection = bgSection(copy.backdrop, copy.backdropDragHint);
-  pictureSection.append(bgRow(copy.immersive, bgToggle('mvImmersiveBackground')));
+  const pictureSection = bgSection(copy.backdrop, copy.backdropDragHint, { id: 'picture' });
+  pictureSection.append(bgRow(copy.immersive, bgToggle('mvImmersiveBackground'), copy.immersiveHint));
   pictureSection.append(bgRow(copy.preset, bgPresetSelect(), copy.presetHint));
-  pictureSection.append(bgRow(copy.autoScale, bgToggle('mvImmersiveBackgroundAutoScale')));
+  pictureSection.append(bgRow(copy.autoScale, bgToggle('mvImmersiveBackgroundAutoScale'), copy.autoScaleHint));
   pictureSection.append(bgRow(copy.widthLabel, bgSlider('mvImmersiveBackgroundWidthPercent', 10, 200, 1, '%')));
   pictureSection.append(bgRow(copy.heightLabel, bgSlider('mvImmersiveBackgroundHeightPercent', 10, 200, 1, '%')));
   pictureSection.append(bgRow(copy.fitLabel, bgSelect('mvImmersiveBackgroundFit', [
@@ -5790,22 +6222,22 @@ const renderBackgroundSettings = ({ masterSwitch = false } = {}) => {
   pictureSection.append(bgRow(copy.blur, bgSlider('mvImmersiveBackgroundBlurPx', 0, 32, 1, 'px')));
   pictureSection.append(bgRow(copy.brightness, bgSlider('mvImmersiveBackgroundBrightnessPercent', 60, 140, 1, '%')));
   pictureSection.append(bgRow(copy.overlay, bgSlider('mvImmersiveBackgroundOverlayOpacityPercent', 0, 100, 1, '%')));
-  pictureSection.append(bgRow(copy.readability, bgToggle('mvLyricsReadabilityEnhanced', true)));
-  pictureSection.append(bgRow(copy.hideLyrics, bgToggle('mvHideLyrics', true)));
+  pictureSection.append(bgRow(copy.readability, bgToggle('mvLyricsReadabilityEnhanced', true), copy.readabilityHint));
+  pictureSection.append(bgRow(copy.hideLyrics, bgToggle('mvHideLyrics', true), copy.hideLyricsHint));
   // The detail page's own way into this panel; off means the panel keeps only the
   // title, the collapse arrow and its actions.
   pictureSection.append(bgRow(copy.settingsButton, bgToggle('mvShowSettingsButton'), copy.settingsButtonHint));
   wrap.append(pictureSection);
 
   // ---- sync --------------------------------------------------------------
-  const syncSection = bgSection(copy.syncMode, null);
-  syncSection.append(bgRow(copy.followProgress, bgToggle('mvRestartAudioOnLoad', true)));
+  const syncSection = bgSection(copy.syncMode, copy.syncHint, { id: 'sync' });
+  syncSection.append(bgRow(copy.followProgress, bgToggle('mvRestartAudioOnLoad', true), copy.followProgressHint));
   syncSection.append(bgRow(copy.syncMode, bgSelect('mvSyncMode', [
     ['stable', locale === 'en-US' ? 'Stable' : '稳定'],
     ['balanced', locale === 'en-US' ? 'Balanced' : '均衡'],
     ['precise', locale === 'en-US' ? 'Precise' : '精准'],
   ])));
-  syncSection.append(bgRow(copy.replayOnChange, bgToggle('mvReplayAudioOnChange')));
+  syncSection.append(bgRow(copy.replayOnChange, bgToggle('mvReplayAudioOnChange'), copy.replayOnChangeHint));
   syncSection.append(bgRow(copy.quality, bgSelect('mvMaxQuality', [
     ['720p', '720p'],
     ['1080p', '1080p'],
@@ -5814,10 +6246,26 @@ const renderBackgroundSettings = ({ masterSwitch = false } = {}) => {
     ['max', 'max'],
   ])));
   syncSection.append(bgRow(copy.allow60fps, bgToggle('mvAllow60fps')));
+  // What the background does when the video runs out (default: stop).
+  syncSection.append(bgRow(copy.endBehaviour, bgSelect('mvEndBehaviour', [
+    ['pause', copy.endPause],
+    ['loop', copy.endLoop],
+    ['colour', copy.endColour],
+  ], true), copy.endBehaviourHint));
+  if (settings.endBehaviour === 'colour') {
+    const colourInput = h('input', 'mms-colour-input');
+    colourInput.type = 'color';
+    colourInput.value = settings.endColour;
+    colourInput.setAttribute('aria-label', copy.endColourLabel);
+    colourInput.addEventListener('change', () => {
+      void persistBackgroundSettings({ mvEndColour: colourInput.value });
+    });
+    syncSection.append(bgRow(copy.endColourLabel, colourInput, copy.endColourHint));
+  }
   wrap.append(syncSection);
 
   // ---- community MV engine ------------------------------------------------
-  const engineSection = bgSection(copy.engineTitle, copy.engineUsage);
+  const engineSection = bgSection(copy.engineTitle, copy.engineUsage, { id: 'engine', defaultOpen: false });
   const engineStatusLine = h('p', 'mms-muted', engineReady()
     ? `${copy.engineReady} · ${copy.engineDatabase(state.mvEngine.database || '')} · ${copy.engineTracks(state.mvEngine.tracks ?? 0)}`
     : `${copy.engineUnavailable}${state.mvEngine?.error ? ` · ${state.mvEngine.error}` : ''}`);
@@ -5905,10 +6353,14 @@ const renderBackgroundSettings = ({ masterSwitch = false } = {}) => {
   // Keep the numbers fresh the first time the page is opened, and fetch the
   // candidates of the playing track once per track so a wrong match can be
   // corrected without pressing anything.
+  //
+  // The guard is the track SIGNATURE, not the bare id: ECHO hands the same id to a
+  // different song (a rebuilt queue, a re-queued item), and an id-only guard then
+  // decided the page was already up to date and never searched for the new song.
   const lastTrack = state.lastTrack;
-  const lastTrackId = lastTrack ? String(trackKey(lastTrack)) : null;
-  if (lastTrackId && state.backgroundTestFor !== lastTrackId) {
-    state.backgroundTestFor = lastTrackId;
+  const lastTrackKey = lastTrack ? trackSignature(lastTrack, trackKey(lastTrack)) : null;
+  if (lastTrackKey && state.backgroundTestFor !== lastTrackKey) {
+    state.backgroundTestFor = lastTrackKey;
     void loadBackdropCandidates(lastTrack, { silent: true });
   }
 
@@ -6100,6 +6552,26 @@ const renderPlaylistTools = () => {
   layout.append(select);
   tools.append(layout);
 
+  // Saving a playlist now also writes it into ECHO's own 收藏与歌单, which is what
+  // this switches off (for anyone who only wants the plugin's own copy).
+  const libraryToggle = h('label', 'mms-view-mode');
+  const libraryBox = h('input');
+  libraryBox.type = 'checkbox';
+  libraryBox.checked = config.mvLibraryPlaylists !== false;
+  libraryBox.addEventListener('change', () => {
+    config.mvLibraryPlaylists = libraryBox.checked;
+    try {
+      external.settings?.set?.({ ...config });
+    } catch {
+      /* hosts without the config API keep the in-memory value */
+    }
+    void invokeMain('setSettings', { mvLibraryPlaylists: libraryBox.checked }).catch(() => null);
+    renderSoon();
+  });
+  libraryToggle.append(libraryBox, h('span', 'mms-muted', copy.libraryPlaylists));
+  tools.append(libraryToggle);
+  tools.append(h('p', 'mms-muted', copy.libraryPlaylistsHint));
+
   tools.append(h('p', 'mms-muted', copy.importHint));
   return tools;
 };
@@ -6197,6 +6669,15 @@ const renderPlaylistGrid = (entries) => {
     const actions = h('div', 'mms-card-actions');
     actions.append(button(stored ? 'mms-ghost' : 'mms-primary', stored ? copy.playlistsUnsave : copy.playlistsSave,
       (event) => void toggleStoredPlaylist(entry, event)));
+    // Saved playlists can be pushed into ECHO's own library again — the way to pick
+    // up songs that were added to (or removed from) the playlist since it was saved.
+    if (stored) {
+      actions.append(button('mms-ghost', copy.libraryUpdate, (event) => {
+        event?.stopPropagation?.();
+        event?.preventDefault?.();
+        void updatePlaylistInLibrary(entry);
+      }, { title: copy.libraryUpdateHint }));
+    }
 
     card.append(cover, main, actions);
     card.addEventListener('click', () => void openAccountPlaylist(entry));
@@ -6240,10 +6721,8 @@ const backgroundPageSignature = () => [
   state.mvSelected?.id || '',
   Number(state.mvOffset) || 0,
   state.backgroundTest?.track?.id || '',
+  state.backgroundTest?.track?.title || '',
   mergedBackdropCandidates().length,
-  state.titleSearch?.for || '',
-  state.titleSearch?.query || '',
-  (state.titleSearch?.result?.candidates || []).length,
   (state.mvVariants?.variants || []).length,
   state.busy || '',
 ].join('|');
@@ -6266,12 +6745,26 @@ const renderBackgroundPage = () => {
 
   backgroundPageRoot.replaceChildren(root);
   backgroundPageRoot.dataset.signature = backgroundPageSignature();
+  backgroundPageBuild += 1;
   if (scroller && scrollTop > 0) scroller.scrollTop = scrollTop;
 };
+
+/**
+ * True while replacing the page would destroy a control under the user's finger.
+ *
+ * A click only fires when mousedown and mouseup land on the same element, so a
+ * rebuild between them silently swallows the press — the "some buttons do not
+ * respond" report. The poll and the async handlers therefore leave the page alone
+ * for a moment after any pointer or keyboard activity.
+ */
+const backgroundPageBusyWithUser = () => Date.now() - backgroundPageLastInput < BACKGROUND_PAGE_SETTLE_MS;
 
 /** Rebuilds the page only when what it shows actually moved (poll tick). */
 const refreshBackgroundPage = ({ force = false } = {}) => {
   if (!backgroundPageRoot) return;
+  // A forced rebuild is a direct response to something the user just did (or a
+  // state the caller knows changed), so it is allowed to replace the page.
+  if (!force && backgroundPageBusyWithUser()) return;
   if (!force && backgroundPageRoot.dataset.signature === backgroundPageSignature()) return;
   renderBackgroundPage();
 };
@@ -6339,7 +6832,7 @@ const renderPage = () => {
 // ---------------------------------------------------------------------------
 
 const CSS = `
-.mms-root{display:flex;flex-direction:column;gap:14px;padding:18px 20px 32px;color:var(--theme-text,inherit);font:13px/1.5 -apple-system,system-ui,"Segoe UI",sans-serif}
+.mms-root{display:flex;flex-direction:column;gap:14px;padding:18px 20px 32px;color:var(--theme-page-text,inherit);font:13px/1.5 -apple-system,system-ui,"Segoe UI",sans-serif}
 .mms-header{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap}
 .mms-title{margin:0;font-size:20px;font-weight:650}
 .mms-subtitle{margin:2px 0 0;color:var(--theme-muted-text,#64748b);font-size:12px}
@@ -6503,6 +6996,8 @@ html[data-theme="dark"] .mms-lyrics-bg::after{opacity:max(var(--mms-immersive-ov
 /* mvHideLyrics — hides the lyric column while the MV background is playing. */
 html[data-mms-hide-lyrics="true"] .lyrics-page .lyrics-scroll{display:none}
 html[data-mms-hide-lyrics="true"] .lyrics-page .lyrics-left-panel::after{content:"♪";position:absolute;inset:0;display:grid;place-items:center;font-size:64px;color:rgba(255,255,255,.2);pointer-events:none}
+.mms-lyrics-bg[data-ended="true"] .mms-backdrop-video{visibility:hidden}
+.mms-lyrics-bg[data-ended="true"]{background:var(--mms-ended-colour,#000)}
 .mms-backdrop-toggle{position:relative;display:inline-flex!important;align-items:center;justify-content:center}
 /* The transport MV button is lit (accent colour + a filled dot + the transport
    underline ECHO draws from .is-soft-active / aria-pressed) ONLY while the song
@@ -6517,13 +7012,50 @@ html .player-bar .transport .mms-backdrop-toggle.mms-backdrop-toggle[data-active
 html .player-bar .transport .mms-backdrop-toggle.mms-backdrop-toggle[data-active="true"]:after{opacity:1}
 /* Status pill for the background match/resolution. It sits next to the
    video layer (the layer itself is transparent until it plays). */
-.mms-backdrop-status{position:absolute;left:50%;bottom:18px;transform:translateX(-50%);z-index:22;display:none;flex-direction:column;gap:6px;min-width:220px;max-width:min(520px,70%);padding:9px 14px;border:1px solid var(--theme-panel-border,#d8dee9);border-radius:12px;background:rgba(12,16,22,.78);color:#eef4fc;font:12px/1.4 -apple-system,system-ui,"Segoe UI",sans-serif;pointer-events:none;backdrop-filter:blur(6px)}
+.mms-backdrop-status{position:absolute;left:50%;bottom:18px;transform:translateX(-50%);z-index:22;display:none;flex-direction:column;gap:6px;min-width:220px;max-width:min(520px,70%);padding:9px 14px;border:1px solid var(--theme-panel-border,#d8dee9);border-radius:12px;background:var(--mms-overlay-bg);color:var(--theme-page-text,#eef4fc);font:12px/1.4 -apple-system,system-ui,"Segoe UI",sans-serif;pointer-events:none;backdrop-filter:blur(6px)}
 .mms-backdrop-status[data-visible="true"]{display:flex}
 .mms-backdrop-status[data-state="error"]{border-color:rgba(239,68,68,.6)}
 .mms-backdrop-status-text{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* The injected sidebar icons are drawn at the size ECHO uses for its own nav
+   glyphs, and take the button's colour so hover/active come from the app. */
+.nav-icon-shell[data-mms-icon]{display:inline-flex;align-items:center;justify-content:center}
+.nav-icon-shell[data-mms-icon] > svg{width:21px;height:21px;display:block;color:currentColor}
+.mms-copy-area{position:fixed;left:-9999px;top:0;width:1px;height:1px;opacity:0}
 /* Background settings page */
+/* The floating pieces (MV panel, settings drawer, status pill) sit over the video,
+   so they cannot simply take the page background. They are built from the theme's
+   own surface instead: the overlay variables are the theme panel colour with the
+   opacity mixed in, which keeps dark text readable on a light theme and light text
+   on a dark one — the "「MV 背景设置」 is unreadable in light mode" report. */
+/* Opaque by default because ECHO's light theme is its default: pale video frames
+   would otherwise wash the panel out and dark text would be lost on them. The
+   dark theme takes the translucent surface instead. */
+html{--mms-overlay-bg:color-mix(in srgb,var(--theme-panel-bg-strong,#ffffff) 95%,transparent);--mms-overlay-bg-strong:color-mix(in srgb,var(--theme-panel-bg-strong,#ffffff) 98%,transparent);--mms-overlay-hover:color-mix(in srgb,var(--theme-accent-bg,rgba(127,127,127,.16)) 62%,transparent)}
+html[data-theme="dark"]{--mms-overlay-bg:color-mix(in srgb,var(--theme-panel-bg,#141a22) 90%,transparent);--mms-overlay-bg-strong:color-mix(in srgb,var(--theme-panel-bg-strong,#0b0f16) 96%,transparent);--mms-overlay-hover:color-mix(in srgb,var(--theme-accent-bg,rgba(255,255,255,.14)) 62%,transparent)}
+/* Every button answers a press: an unmistakable colour move plus a small sink, so
+   "did that click register?" never has to be guessed. */
+.mms-root button,.mms-mv-panel button,.mms-mv-drawer button,.mms-backdrop-status button{transition:background-color .12s ease,border-color .12s ease,color .12s ease,transform .08s ease,box-shadow .12s ease,filter .12s ease}
+.mms-root button:active:not(:disabled),.mms-mv-panel button:active:not(:disabled),.mms-mv-drawer button:active:not(:disabled),.mms-backdrop-status button:active:not(:disabled){transform:translateY(1px) scale(.985);filter:brightness(.88)}
+.mms-primary:active:not(:disabled){box-shadow:inset 0 2px 6px rgba(0,0,0,.28)}
+/* A press leaves a mark for a moment: an accent wash and a ring, so "nothing
+   happened" and "it worked" are distinguishable without watching the panel. */
+.mms-root button[data-feedback="true"],.mms-mv-panel button[data-feedback="true"],.mms-mv-drawer button[data-feedback="true"]{background:color-mix(in srgb,var(--theme-accent-solid-bg,#4b55e8) 32%,transparent);border-color:var(--theme-accent-solid-bg,#4b55e8);color:var(--theme-on-accent,#fff);box-shadow:0 0 0 2px color-mix(in srgb,var(--theme-accent-solid-bg,#4b55e8) 36%,transparent)}
+.mms-ghost[data-feedback="true"],.mms-mv-panel-action[data-feedback="true"]{background:color-mix(in srgb,var(--theme-accent-solid-bg,#4b55e8) 26%,transparent)!important}
+.mms-root button:focus-visible,.mms-mv-panel button:focus-visible,.mms-mv-drawer button:focus-visible{outline:2px solid var(--theme-focus-ring,rgba(75,85,232,.4));outline-offset:2px}
 .mms-background{display:flex;flex-direction:column;gap:14px}
 .mms-bg-section{display:flex;flex-direction:column;gap:8px;padding:14px 16px;border:1px solid var(--theme-panel-border,#d8dee9);border-radius:14px;background:var(--theme-panel-bg,transparent)}
+/* Section header with the community drawer's chevron collapse: the title row is a
+   flex line, the chevron sits at the right edge and rotates when the section is
+   closed, and the section body is what it hides. */
+.mms-bg-section-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.mms-bg-section-title{display:flex;flex-direction:column;gap:2px;min-width:0}
+.mms-bg-section-toggle{flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;margin:-4px -4px 0 0;padding:0;border:0;border-radius:8px;background:transparent;color:var(--theme-muted-text,inherit);cursor:pointer}
+.mms-bg-section-toggle:hover{background:color-mix(in srgb,var(--theme-accent-bg,rgba(127,127,127,.12)) 60%,transparent);color:var(--theme-accent-text-strong,var(--theme-accent-solid-bg,#4b55e8))}
+.mms-bg-section-toggle:focus-visible{outline:2px solid var(--theme-focus-ring,rgba(75,85,232,.28));outline-offset:2px}
+.mms-bg-chevron{display:block;font-size:12px;line-height:1;transition:transform .18s cubic-bezier(.2,0,.2,1)}
+.mms-bg-section[data-open="false"] .mms-bg-chevron{transform:rotate(-90deg)}
+.mms-bg-section[data-open="false"] .mms-bg-section-body{display:none}
+.mms-bg-section-body{display:flex;flex-direction:column;gap:8px}
 .mms-bg-title{margin:0;font-size:14px;font-weight:650}
 .mms-bg-status{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px}
 .mms-bg-card{display:flex;flex-direction:column;gap:6px;padding:12px;border:1px solid var(--theme-panel-border,#d8dee9);border-radius:12px;min-width:0}
@@ -6542,6 +7074,7 @@ html .player-bar .transport .mms-backdrop-toggle.mms-backdrop-toggle[data-active
 .mms-bg-slider{display:flex;align-items:center;gap:8px;min-width:230px}
 .mms-bg-slider input[type="range"]{flex:1 1 auto;min-width:70px;accent-color:var(--theme-accent-solid-bg,#4b55e8)}
 .mms-bg-number{flex:0 0 auto;width:5.2em;padding:4px 6px;border:1px solid var(--theme-panel-border,#d8dee9);border-radius:7px;background:var(--theme-field-bg,transparent);color:inherit;font-size:11px;font-variant-numeric:tabular-nums;text-align:right}
+.mms-colour-input{width:52px;height:28px;padding:2px;border:1px solid var(--theme-button-border,var(--theme-panel-border,#d8dee9));border-radius:8px;background:var(--theme-field-bg,transparent);cursor:pointer}
 .mms-bg-slider output{min-width:3.2em;text-align:right;font-size:11px;color:var(--theme-muted-text,#64748b);font-variant-numeric:tabular-nums}
 .mms-switch{display:inline-flex;align-items:center;cursor:pointer;flex:0 0 auto}
 /* ECHO's own switch shape (see .toggle-btn): a 40x22 track with a round knob,
@@ -6571,17 +7104,17 @@ html .player-bar .transport .mms-backdrop-toggle.mms-backdrop-toggle[data-active
    had its lower half covered by the transport (and was unclickable there). The
    bar's measured height lives in --mms-chrome-bottom. The whole header toggles the
    body and the ⚙ (optional, see mvShowSettingsButton) opens the settings drawer. */
-.mms-mv-panel{position:absolute;left:16px;bottom:calc(var(--mms-chrome-bottom,0px) + 18px);z-index:24;display:flex;flex-direction:column;gap:6px;max-width:min(460px,64%);padding:8px 10px;border:1px solid var(--theme-panel-border,#d8dee9);border-radius:12px;background:rgba(12,16,22,.82);color:#eef4fc;font:12px/1.4 -apple-system,system-ui,"Segoe UI",sans-serif;backdrop-filter:blur(6px)}
+.mms-mv-panel{position:absolute;left:16px;bottom:calc(var(--mms-chrome-bottom,0px) + 18px);z-index:24;display:flex;flex-direction:column;gap:6px;max-width:min(460px,64%);padding:8px 10px;border:1px solid var(--theme-panel-border,#d8dee9);border-radius:12px;background:var(--mms-overlay-bg);color:var(--theme-page-text,#eef4fc);font:12px/1.4 -apple-system,system-ui,"Segoe UI",sans-serif;backdrop-filter:blur(10px)}
 .mms-mv-panel-head{display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none}
 .mms-mv-panel-head-actions{flex:1 1 auto}
 .mms-mv-panel-title{font-weight:600;font-size:11px;letter-spacing:.02em;text-transform:uppercase;opacity:.85;white-space:nowrap}
-.mms-mv-panel-action{border:1px solid rgba(255,255,255,.22);border-radius:8px;background:transparent;color:inherit;cursor:pointer;font-size:11px;padding:2px 7px;white-space:nowrap}
-.mms-mv-panel-action:hover{background:rgba(255,255,255,.12)}
+.mms-mv-panel-action{border:1px solid var(--theme-button-border,rgba(255,255,255,.22));border-radius:8px;background:transparent;color:inherit;cursor:pointer;font-size:11px;padding:2px 7px;white-space:nowrap}
+.mms-mv-panel-action:hover{background:var(--mms-overlay-hover)}
 .mms-mv-panel[data-open="false"] .mms-mv-panel-body{display:none}
 .mms-mv-panel-body{display:flex;flex-direction:column;gap:6px}
-.mms-mv-panel-body small{color:rgba(238,244,252,.72);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mms-mv-panel-body small{color:var(--theme-muted-text,rgba(238,244,252,.72));overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .mms-mv-panel-actions{display:flex;flex-wrap:wrap;gap:4px}
-.mms-mv-panel-actions .mms-ghost{padding:4px 8px;font-size:11px;border-color:rgba(255,255,255,.24);color:inherit}
+.mms-mv-panel-actions .mms-ghost{padding:4px 8px;font-size:11px;border-color:var(--theme-button-border,rgba(255,255,255,.24));color:inherit}
 .mms-mv-panel[data-state="error"]{border-color:rgba(239,68,68,.6)}
 /* Full MV settings drawer on the right edge of the lyrics page: the same
    content as the sidebar's background page, usable while the MV plays.
@@ -6594,7 +7127,7 @@ html .player-bar .transport .mms-backdrop-toggle.mms-backdrop-toggle[data-active
    same applies to the player bar at the bottom (--mms-chrome-bottom), so the
    drawer's lowest controls stay clickable.
    It is anchored to the right edge and slides in from there (transform only). */
-.mms-mv-drawer{position:absolute;right:0;top:var(--mms-drawer-top,var(--titlebar-height,44px));bottom:calc(var(--mms-chrome-bottom,0px) + 10px);z-index:32;display:flex;flex-direction:column;width:min(430px,94%);max-height:calc(100% - 24px);border:1px solid var(--theme-panel-border,#d8dee9);border-radius:14px 0 0 14px;background:rgba(10,13,18,.95);color:var(--theme-text,#eef4fc);font:12px/1.5 -apple-system,system-ui,"Segoe UI",sans-serif;box-shadow:-18px 0 42px rgba(0,0,0,.34);backdrop-filter:blur(12px);-webkit-app-region:no-drag;transform:translateX(102%);transition:transform .26s cubic-bezier(.2,0,.2,1);visibility:hidden}
+.mms-mv-drawer{position:absolute;right:0;top:var(--mms-drawer-top,var(--titlebar-height,44px));bottom:calc(var(--mms-chrome-bottom,0px) + 10px);z-index:32;display:flex;flex-direction:column;width:min(430px,94%);max-height:calc(100% - 24px);border:1px solid var(--theme-panel-border,#d8dee9);border-radius:14px 0 0 14px;background:var(--mms-overlay-bg-strong);color:var(--theme-page-text,#eef4fc);font:12px/1.5 -apple-system,system-ui,"Segoe UI",sans-serif;box-shadow:-18px 0 42px rgba(0,0,0,.34);backdrop-filter:blur(12px);-webkit-app-region:no-drag;transform:translateX(102%);transition:transform .26s cubic-bezier(.2,0,.2,1);visibility:hidden}
 .mms-mv-drawer[data-open="true"]{transform:none;visibility:visible}
 .mms-mv-drawer-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 14px;border-bottom:1px solid var(--theme-panel-border,#d8dee9)}
 .mms-mv-drawer-title{font-size:13px;font-weight:650}
@@ -6713,12 +7246,30 @@ const installBackdropObserver = () => {
   };
 };
 
+const NAV_SVG = 'viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.55" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"';
+
+/**
+ * The two sidebar glyphs, built on demand.
+ *
+ * A function rather than constants because the sidebar pages are registered above
+ * this section: their registration objects are built at that point, so they cannot
+ * read a `const` declared further down.
+ */
+const sidebarIcon = (which) => {
+  if (which === 'mv') {
+    // The 背景设置 page: the same clapperboard as the transport MV button.
+    return `<svg ${NAV_SVG}><path d="M20.2 6 3 11l-.9-2.4c-.3-1.1.3-2.2 1.3-2.5l13.5-4c1.1-.3 2.2.3 2.5 1.3Z"/><path d="m6.2 5.3 3.1 3.9"/><path d="m12.4 3.4 3.1 4"/><path d="M3 11h18v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg>`;
+  }
+  // The 多平台音源 page: a globe, i.e. "sources from everywhere".
+  return `<svg ${NAV_SVG}><circle cx="12" cy="12" r="8.2"/><path d="M3.8 12h16.4"/><path d="M12 3.8c2.1 2.2 3.2 5 3.2 8.2s-1.1 6-3.2 8.2c-2.1-2.2-3.2-5-3.2-8.2s1.1-6 3.2-8.2Z"/></svg>`;
+};
+
 const disposeCss = external.extend?.css?.('echo-mms-page', CSS);
 
 const disposeSidebar = external.sidebar?.register({
   id: PAGE_ID,
   label: copy.title,
-  icon: '♫',
+  icon: sidebarIcon('sources'),
   order: 60,
   render(root) {
     pageRoot = root;
@@ -6730,17 +7281,86 @@ const disposeSidebar = external.sidebar?.register({
 // 背景设置 is a page of its own: the audio page keeps only 我的歌单 / 搜索 / 账号,
 // and this page stays reachable whether or not the background is switched on
 // (the lyrics-page drawer disappears while it is off).
+// ---------------------------------------------------------------------------
+// Sidebar icons
+// ---------------------------------------------------------------------------
+//
+// Loader 1.6.9 renders an external page's `icon` as TEXT (`nav-icon-shell.textContent
+// = entry.icon`), which is why the pages used to carry ♫ / 🎬 next to ECHO's own
+// stroked SVG nav icons. Loader 1.7.4 (the installed one) instead does:
+//
+//     if (typeof icon === 'string' && icon.includes('<svg')) iconShell.innerHTML = icon;
+//     else iconShell.textContent = icon;
+//
+// so the SVG goes straight into `icon` (undocumented, but real). The glyphs are
+// drawn in ECHO's nav style — 24-unit viewBox, stroke=currentColor, round caps and
+// joins, stroke-width 1.55 (NavIcons.tsx / loader-ui.js navSvg) — and the older
+// loader is still covered by installSidebarIconSync below.
+
+
+/**
+ * Puts the SVG into a sidebar button for loaders that only write text (1.6.9).
+ * On 1.7.4 the shell already holds the SVG from `icon` and nothing needs doing.
+ *
+ * `renderSidebarButtons` rewrites `nav-icon-shell.textContent` on every pass, so an
+ * SVG injected into the shell is wiped — the marker check keeps this idempotent and
+ * the observer re-applies it, which is the best a text-only loader allows.
+ */
+const applySidebarIcons = () => {
+  const wanted = [
+    [PAGE_ID, sidebarIcon('sources')],
+    [`${PAGE_ID}-mv`, sidebarIcon('mv')],
+  ];
+  for (const [id, svg] of wanted) {
+    const shell = document.querySelector(`[data-echo-external-sidebar="${id}"] .nav-icon-shell`);
+    if (!shell || shell.dataset.mmsIcon === id) continue;
+    shell.dataset.mmsIcon = id;
+    // 1.7.4 already injected it from `icon`; only fill a text-only shell.
+    if (shell.querySelector?.('svg')) continue;
+    shell.textContent = '';
+    shell.innerHTML = svg;
+  }
+};
+
+/** Re-applies the icons while ECHO/loader rebuild the navigation (old loaders). */
+const installSidebarIconSync = () => {
+  applySidebarIcons();
+  if (typeof MutationObserver !== 'function') return () => {};
+  let pending = false;
+  const observer = new MutationObserver(() => {
+    if (pending) return;
+    pending = true;
+    requestAnimationFrame(() => {
+      pending = false;
+      applySidebarIcons();
+    });
+  });
+  observer.observe(document.body, { childList: true, subtree: true });
+  return () => observer.disconnect();
+};
+
 const disposeMvSidebar = external.sidebar?.register({
   id: `${PAGE_ID}-mv`,
   label: copy.mvPageTitle,
-  icon: '🎬',
+  icon: sidebarIcon('mv'),
   order: 61,
   render(root) {
     backgroundPageRoot = root;
     root.classList.add('mms-page', 'mms-page--mv');
+    // Any press or key on the page marks the moment: a rebuild while the pointer
+    // is down would replace the control and lose the click.
+    for (const type of ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'click', 'keydown', 'input', 'change']) {
+      root.addEventListener(type, () => {
+        backgroundPageLastInput = Date.now();
+      }, true);
+    }
     renderBackgroundPage();
   },
 });
+
+// Both pages are registered by now, so the loader's nav buttons exist (or will on
+// its next pass, which the observer catches).
+const disposeSidebarIcons = installSidebarIconSync();
 
 void (async () => {
   // The remembered user configuration is laid over the package defaults before
@@ -6799,7 +7419,9 @@ return () => {
   disposeSettingsWatch?.();
   disposeSidebar?.();
   disposeMvSidebar?.();
+  disposeSidebarIcons?.();
   disposeCss?.();
   pageRoot = null;
   backgroundPageRoot = null;
+  backgroundPageLastInput = 0;
 };
