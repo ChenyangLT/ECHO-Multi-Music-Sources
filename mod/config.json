@@ -7,7 +7,6 @@
   "showProviderBadges": true,
   "interceptPlayback": true,
   "playlistViewMode": "grid",
-  "mvLibraryPlaylists": true,
   "lyricsNetworkEnabled": true,
   "songBackgroundEnabled": false,
   "mvEnabled": false,

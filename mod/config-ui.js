@@ -66,7 +66,6 @@ const text = locale === 'zh-CN'
       quality: 'MV 最高画质',
       bestQuality: '最高',
       allow60fps: '允许 60fps',
-      mvLibraryPlaylists: '保存歌单时写入 ECHO 收藏与歌单',
       endBehaviour: 'MV 播放完成后',
       endPause: '暂停（停在最后一帧）',
       endLoop: '循环播放',
@@ -159,7 +158,6 @@ const text = locale === 'zh-CN'
       quality: 'MV max quality',
       bestQuality: 'Max',
       allow60fps: 'Allow 60fps',
-      mvLibraryPlaylists: 'Write saved playlists into the ECHO library',
       endBehaviour: 'When the MV finishes',
       endPause: 'Pause (hold the last frame)',
       endLoop: 'Loop it',
@@ -529,7 +527,6 @@ advancedGrid.append(
     { value: 'max', label: text.bestQuality },
   ]),
   toggleField('mvAllow60fps', text.allow60fps),
-  toggleField('mvLibraryPlaylists', text.mvLibraryPlaylists),
   selectField('mvEndBehaviour', text.endBehaviour, [
     { value: 'pause', label: text.endPause },
     { value: 'loop', label: text.endLoop },

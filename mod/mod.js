@@ -106,15 +106,6 @@ const STRINGS = {
     playlistsReimport: '重新获取',
     playlistsSaved: (count) => `已保存到本地：${count}`,
     // Writing the same playlist into ECHO's own library (收藏与歌单).
-    mvLibraryPlaylists: '保存歌单时同时写入 ECHO 收藏与歌单',
-    libraryPlaylistsHint: '开启后，「保存到本地」会把歌单里的歌曲也加进 ECHO 自己的「收藏与歌单」，在软件的歌单页里就能直接播放。',
-    libraryPlaylistDescription: '由「多平台音源」插件保存',
-    libraryUpdate: '更新',
-    libraryUpdateHint: '把歌单里的歌曲重新写入 ECHO 收藏与歌单（用于同步新增或删除的歌曲）',
-    libraryUpdating: '正在更新歌单…',
-    libraryUpdated: (count) => `已更新到 ECHO 收藏与歌单：${count}`,
-    libraryUpdateNoTracks: '这个歌单还没有保存过歌曲，先保存到本地再更新',
-    libraryUnavailable: '当前版本读不到 ECHO 收藏与歌单，只能保存在插件本地',
     playlistsFromLocal: '来自本地保存',
     playlistsClearLocal: '清除本地歌单',
     playlistsCleared: '已清除本地保存的歌单',
@@ -397,15 +388,6 @@ const STRINGS = {
     playlistsRemoved: 'Removed the local copy',
     playlistsReimport: 'Re-fetch',
     playlistsSaved: (count) => `Saved locally: ${count}`,
-    mvLibraryPlaylists: 'Also write saved playlists into ECHO\'s favourites & playlists',
-    libraryPlaylistsHint: 'With this on, "Save locally" also adds the playlist\'s tracks to ECHO\'s own library, so it can be played from the app\'s playlist page.',
-    libraryPlaylistDescription: 'Saved by the Multi Music Sources plugin',
-    libraryUpdate: 'Update',
-    libraryUpdateHint: 'Writes the playlist\'s tracks into ECHO\'s favourites & playlists again (use it after songs were added or removed)',
-    libraryUpdating: 'Updating the playlist…',
-    libraryUpdated: (count) => `Updated in ECHO's library: ${count}`,
-    libraryUpdateNoTracks: 'This playlist has no saved songs yet — save it locally first',
-    libraryUnavailable: 'This build does not expose ECHO\'s library, so the playlist stays local to the plugin',
     playlistsFromLocal: 'from the local copy',
     playlistsClearLocal: 'Clear local playlists',
     playlistsCleared: 'Cleared the locally kept playlists',
@@ -1444,128 +1426,6 @@ const refreshAccountCollection = async () => {
 const collectionSourceOf = (entry) => (entry?.kind === 'link' ? 'link' : 'account');
 
 /** Keeps one playlist's tracks locally; returns the stored record (or null). */
-/**
- * ECHO's own library, as exposed to the renderer.
- *
- * The preload always exposes `library` (`contextBridge.exposeInMainWorld('echo', …)`)
- * and the loader hands the real object to mods, so a saved playlist can be written
- * into the app's own 收藏与歌单 instead of staying in the mod's private store. Every
- * call is guarded: an older host without the namespace keeps the local store only.
- */
-const echoLibrary = () => external?.echo?.library || window.echo?.library || null;
-
-/** The provider ids ECHO's library accepts for a streaming track. */
-const LIBRARY_PROVIDERS = new Set(['netease', 'qqmusic', 'kugou', 'bilibili', 'youtube', 'soundcloud', 'spotify', 'tidal', 'qobuz']);
-
-/** One of the mod's tracks in the shape ECHO's library stores. */
-const libraryTrackPayload = (track) => {
-  const provider = String(track?.provider || '').toLowerCase();
-  const providerTrackId = String(track?.providerTrackId || track?.id || '').trim();
-  const title = String(track?.title || '').trim();
-  if (!LIBRARY_PROVIDERS.has(provider) || !providerTrackId || !title) return null;
-  const stableKey = String(track?.stableKey || `streaming:${provider}:${providerTrackId}`);
-  return {
-    id: String(track?.id || stableKey),
-    stableKey,
-    provider,
-    providerTrackId,
-    title,
-    artist: String(track?.artist || '').trim() || undefined,
-    album: track?.album ? String(track.album) : undefined,
-    duration: Number(track?.duration) || undefined,
-    unavailable: track?.playable === false ? true : undefined,
-  };
-};
-
-/** The library playlist that mirrors this mod playlist, if it was ever created. */
-const libraryPlaylistFor = (key) => {
-  const stored = state.playlistStore?.collections?.[key];
-  const id = String(stored?.libraryPlaylistId || '').trim();
-  return id || null;
-};
-
-/**
- * Writes a playlist's tracks into ECHO's own library.
- *
- * The playlist is created once and then reused: the mapping is kept in the mod's
- * store (`libraryPlaylistId`), so saving again updates the same playlist instead of
- * piling up copies. Returns the playlist id, or null when the library is not
- * reachable (an older host) or nothing could be written.
- */
-const syncPlaylistToEchoLibrary = async (key, name, tracks) => {
-  const library = echoLibrary();
-  if (!library?.addStreamingTrackToPlaylist) return null;
-  const wanted = (Array.isArray(tracks) ? tracks : []).map(libraryTrackPayload).filter(Boolean);
-  if (!wanted.length) return null;
-
-  let playlistId = libraryPlaylistFor(key);
-  try {
-    if (!playlistId) {
-      if (typeof library.getPlaylists === 'function' && name) {
-        // Reuse a playlist this mod made earlier under the same name, so a reinstall
-        // (which loses the mapping) does not create a duplicate.
-        const all = await library.getPlaylists().catch(() => null);
-        const list = Array.isArray(all) ? all : (all?.playlists || []);
-        const match = list.find((item) => String(item?.name || '').trim() === String(name).trim());
-        if (match?.id) playlistId = String(match.id);
-      }
-      if (!playlistId && typeof library.createPlaylist === 'function') {
-        const created = await library.createPlaylist({ name: String(name || copy.myPlaylists), description: copy.libraryPlaylistDescription });
-        playlistId = String(created?.id || '');
-      }
-    }
-    if (!playlistId) return null;
-
-    let written = 0;
-    for (const track of wanted) {
-      try {
-        await library.addStreamingTrackToPlaylist(playlistId, track);
-        written += 1;
-      } catch {
-        /* one track failing (a removed upload, an unsupported provider) must not
-           stop the rest of the playlist from being written */
-      }
-    }
-    if (!written) return null;
-    // Remember the mapping so the next save updates this playlist.
-    if (key) {
-      const previous = state.playlistStore?.collections?.[key] || {};
-      state.playlistStore = {
-        ...(state.playlistStore || {}),
-        ready: true,
-        collections: { ...(state.playlistStore?.collections || {}), [key]: { ...previous, libraryPlaylistId: playlistId } },
-      };
-      void invokeMain('playlistStoreLinkLibrary', { key, libraryPlaylistId: playlistId }).catch(() => null);
-    }
-    return playlistId;
-  } catch {
-    /* the library is a bonus: the local store already has the playlist */
-    return null;
-  }
-};
-
-/** Pushes an already saved playlist into the library again (the 更新 button). */
-const updatePlaylistInLibrary = async (entry) => {
-  const key = playlistStoreKeyOf(entry);
-  const stored = state.playlistStore?.collections?.[key];
-  const tracks = Array.isArray(stored?.tracks) ? stored.tracks : [];
-  if (!tracks.length) {
-    reportNotice(copy.libraryUpdateNoTracks);
-    return false;
-  }
-  state.busy = copy.libraryUpdating;
-  renderSoon();
-  try {
-    const playlistId = await syncPlaylistToEchoLibrary(key, stored?.name || entry?.title || entry?.name, tracks);
-    if (playlistId) reportNotice(copy.libraryUpdated(countLabel(tracks.length)));
-    else reportNotice(copy.libraryUnavailable);
-    return Boolean(playlistId);
-  } finally {
-    state.busy = null;
-    renderSoon();
-  }
-};
-
 const savePlaylistCollection = async (key, provider, detail, tracks, entry = null) => {
   const source = collectionSourceOf(entry || detail?.accountEntry);
   try {
@@ -1580,15 +1440,9 @@ const savePlaylistCollection = async (key, provider, detail, tracks, entry = nul
       description: detail?.description || '',
       coverUrl: detail?.coverUrl || null,
       tracks,
-      // Kept so a later save updates the same library playlist.
-      libraryPlaylistId: libraryPlaylistFor(key),
     });
     if (saved?.collections && typeof saved.collections === 'object') {
       state.playlistStore = { ...(state.playlistStore || {}), ready: true, collections: saved.collections };
-      // ECHO's own 收藏与歌单, so the playlist shows up in the app's library too.
-      if (config.mvLibraryPlaylists !== false) {
-        await syncPlaylistToEchoLibrary(key, detail?.name, tracks);
-      }
       return saved.collections[key] || null;
     }
   } catch {
@@ -6552,26 +6406,6 @@ const renderPlaylistTools = () => {
   layout.append(select);
   tools.append(layout);
 
-  // Saving a playlist now also writes it into ECHO's own 收藏与歌单, which is what
-  // this switches off (for anyone who only wants the plugin's own copy).
-  const libraryToggle = h('label', 'mms-view-mode');
-  const libraryBox = h('input');
-  libraryBox.type = 'checkbox';
-  libraryBox.checked = config.mvLibraryPlaylists !== false;
-  libraryBox.addEventListener('change', () => {
-    config.mvLibraryPlaylists = libraryBox.checked;
-    try {
-      external.settings?.set?.({ ...config });
-    } catch {
-      /* hosts without the config API keep the in-memory value */
-    }
-    void invokeMain('setSettings', { mvLibraryPlaylists: libraryBox.checked }).catch(() => null);
-    renderSoon();
-  });
-  libraryToggle.append(libraryBox, h('span', 'mms-muted', copy.libraryPlaylists));
-  tools.append(libraryToggle);
-  tools.append(h('p', 'mms-muted', copy.libraryPlaylistsHint));
-
   tools.append(h('p', 'mms-muted', copy.importHint));
   return tools;
 };
@@ -6669,15 +6503,6 @@ const renderPlaylistGrid = (entries) => {
     const actions = h('div', 'mms-card-actions');
     actions.append(button(stored ? 'mms-ghost' : 'mms-primary', stored ? copy.playlistsUnsave : copy.playlistsSave,
       (event) => void toggleStoredPlaylist(entry, event)));
-    // Saved playlists can be pushed into ECHO's own library again — the way to pick
-    // up songs that were added to (or removed from) the playlist since it was saved.
-    if (stored) {
-      actions.append(button('mms-ghost', copy.libraryUpdate, (event) => {
-        event?.stopPropagation?.();
-        event?.preventDefault?.();
-        void updatePlaylistInLibrary(entry);
-      }, { title: copy.libraryUpdateHint }));
-    }
 
     card.append(cover, main, actions);
     card.addEventListener('click', () => void openAccountPlaylist(entry));

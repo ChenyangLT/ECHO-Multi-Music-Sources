@@ -4,7 +4,7 @@
 
 一个音乐播放器**插件**：把 9 个在线音乐平台接进播放器，搜索、播放、歌单、歌词、MV 背景全在一个侧栏页面里。
 
-[![Version](https://img.shields.io/badge/version-2.1.0-7c5cff?style=flat-square)](https://github.com/ChenyangLT/ECHO-Multi-Music-Sources/releases)
+[![Version](https://img.shields.io/badge/version-2.1.1-7c5cff?style=flat-square)](https://github.com/ChenyangLT/ECHO-Multi-Music-Sources/releases)
 [![License](https://img.shields.io/badge/license-LGPL--3.0-7c5cff?style=flat-square)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%20%2F%2011%20x64-22c55e?style=flat-square)]()
 
@@ -18,7 +18,7 @@
 - **搜索与播放**：歌曲 / 专辑 / 艺人 / 歌单四类结果，单曲播放、播放全部、加入队列，右键可在浏览器打开或复制链接。
 - **在线播放**：直接用播放器自己的播放链路，队列、歌词、音效、迷你播放器的表现和本地歌曲一致；播放地址即用即取，不下载、不写曲库。
 - **我的歌单**：打开插件页就是这一页——登录后的账号歌单、收藏夹、稍后再看、每日推荐，都可整列表播放。
-- **歌单导入与保存**：粘贴歌单链接即可导入；点「保存到本地」离线也能打开，而且会**同时写进 ECHO 自带的「收藏与歌单」**，可以直接在软件的歌单页播放。歌单卡片上的「更新」按钮用来同步后来新增或删除的歌曲；不想要这一步可以在设置里关掉「保存歌单时同时写入 ECHO 收藏与歌单」。
+- **歌单导入与保存**：粘贴歌单链接即可导入；点「保存到本地」离线也能打开，保存在插件自己的存储里。
 - **账号**：每个平台粘贴 Cookie 或扫码登录，登录后可播放更高音质与会员曲目。
 - **音质选择**：可选音质，失败自动降级。
 - **MV 背景**（默认关闭）：在歌曲详情页用歌曲名匹配在线 MV，作为歌词页背景并跟随歌曲进度播放；不下载、不缓存、不占磁盘。
@@ -56,7 +56,7 @@
 ## 安装
 
 1. 到 [**Releases**](https://github.com/ChenyangLT/ECHO-Multi-Music-Sources/releases/latest) 下载
-   **`echo.multi-music-sources-2.1.0.echomod`**；
+   **`echo.multi-music-sources-2.1.1.echomod`**；
 2. 把它拖进模组加载器的 Mods 页面，或直接放进加载器的 `Mods/` 目录；
 3. 在加载器里**启用「ECHO 多平台音源」**，然后重启软件；
 4. 左侧边栏会出现 **♫ 多平台音源** 与 **🎬 MV 背景** 两个页面。
@@ -157,7 +157,7 @@ and survives a restart. The default picture is **“Default (fits left & right)�
 scaled to exactly the width of the window and follows resizing, with the height left free.
 
 **Requirements** — Windows 10/11 x64 and [ShinawaseLoader](https://github.com/ChunchunOwO/ShinawaseLoader)
-1.6.7+ (tested with 1.7.2). Grab `echo.multi-music-sources-2.1.0.echomod` from
+1.6.7+ (tested with 1.7.2). Grab `echo.multi-music-sources-2.1.1.echomod` from
 [**Releases**](https://github.com/ChenyangLT/ECHO-Multi-Music-Sources/releases/latest), drop it into
 the loader's Mods page, enable it and restart.
 

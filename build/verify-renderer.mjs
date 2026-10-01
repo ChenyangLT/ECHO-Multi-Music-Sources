@@ -3344,61 +3344,6 @@ const run = async () => {
     check('a pressed button shows feedback', flag === 'true', `feedback=${flag}`);
   }
 
-  // --- saving a playlist also writes it into ECHO's own library -------------
-  // The mod used to keep saved playlists only in its own JSON store, so they never
-  // appeared in the app's 收藏与歌单. It now creates a library playlist and adds the
-  // streaming tracks through `window.echo.library` (exposed by ECHO's preload).
-  {
-    const libraryCalls = [];
-    windowShim.echo = {
-      library: {
-        getPlaylists: async () => [],
-        createPlaylist: async (payload) => { libraryCalls.push(['createPlaylist', payload?.name]); return { id: 'echo-pl-1' }; },
-        addStreamingTrackToPlaylist: async (playlistId, track) => { libraryCalls.push(['addTrack', playlistId, `${track.provider}:${track.providerTrackId}:${track.title}`]); return { ok: true }; },
-      },
-    };
-    config.mvLibraryPlaylists = true;
-    mainResponses.importAccountCollection = {
-      ok: true,
-      result: {
-        playlistName: '库测试歌单',
-        tracks: [
-          { id: 'streaming:netease:1', stableKey: 'streaming:netease:1', provider: 'netease', providerTrackId: '1', title: '晴天', artist: '周杰伦', duration: 269 },
-          // An unknown provider and a missing id must be skipped, not crash the write.
-          { id: 'bad:1', provider: 'unknown-provider', providerTrackId: '', title: '坏的' },
-        ],
-      },
-    };
-    const libRoot = new Element('div');
-    // The audio page's own shell: the 我的歌单 tab is where the save control lives.
-    sidebarPage.render(libRoot, { toast: (message) => toasts.push(message), echo: {}, config: echoExternalMod.config });
-    await settle(3);
-    libRoot.querySelectorAll('.mms-nav-tab').find((tab) => tab.textContent.includes('我的歌单'))?.click();
-    await waitFor(() => libRoot.allText().includes('保存到本地'), 'playlist cards', 8000);
-    const saveButton = libRoot.querySelectorAll('button').find((item) => item.textContent === '保存到本地');
-    check('the playlist card offers 保存到本地', Boolean(saveButton), saveButton?.textContent || 'not found');
-    if (saveButton) {
-      saveButton.click();
-      await settle(5);
-      check(
-        'saving creates an ECHO library playlist',
-        libraryCalls.some((call) => call[0] === 'createPlaylist'),
-        JSON.stringify(libraryCalls),
-      );
-      check(
-        'the playlist\'s streaming tracks are added to it',
-        libraryCalls.some((call) => call[0] === 'addTrack' && call[2] === 'netease:1:晴天'),
-        JSON.stringify(libraryCalls.filter((call) => call[0] === 'addTrack')),
-      );
-      check(
-        'a track with no usable provider/id is skipped',
-        libraryCalls.filter((call) => call[0] === 'addTrack').length === 1,
-        `${libraryCalls.filter((call) => call[0] === 'addTrack').length} track(s) written`,
-      );
-    }
-    windowShim.echo = {};
-  }
-
   // --- cleanup -------------------------------------------------------------
   await cleanup();
   await settle(1);
