@@ -4,7 +4,7 @@
 
 一个音乐播放器**插件**：把 9 个在线音乐平台接进播放器，搜索、播放、歌单、歌词、MV 背景全在一个侧栏页面里。
 
-[![Version](https://img.shields.io/badge/version-2.0.6-7c5cff?style=flat-square)](https://github.com/ChenyangLT/ECHO-Multi-Music-Sources/releases)
+[![Version](https://img.shields.io/badge/version-2.1.0-7c5cff?style=flat-square)](https://github.com/ChenyangLT/ECHO-Multi-Music-Sources/releases)
 [![License](https://img.shields.io/badge/license-LGPL--3.0-7c5cff?style=flat-square)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%20%2F%2011%20x64-22c55e?style=flat-square)]()
 
@@ -18,18 +18,20 @@
 - **搜索与播放**：歌曲 / 专辑 / 艺人 / 歌单四类结果，单曲播放、播放全部、加入队列，右键可在浏览器打开或复制链接。
 - **在线播放**：直接用播放器自己的播放链路，队列、歌词、音效、迷你播放器的表现和本地歌曲一致；播放地址即用即取，不下载、不写曲库。
 - **我的歌单**：打开插件页就是这一页——登录后的账号歌单、收藏夹、稍后再看、每日推荐，都可整列表播放。
-- **歌单导入与保存**：粘贴歌单链接即可导入；想留下就点「保存到本地」，之后离线也能打开。
+- **歌单导入与保存**：粘贴歌单链接即可导入；点「保存到本地」离线也能打开，而且会**同时写进 ECHO 自带的「收藏与歌单」**，可以直接在软件的歌单页播放。歌单卡片上的「更新」按钮用来同步后来新增或删除的歌曲；不想要这一步可以在设置里关掉「保存歌单时同时写入 ECHO 收藏与歌单」。
 - **账号**：每个平台粘贴 Cookie 或扫码登录，登录后可播放更高音质与会员曲目。
 - **音质选择**：可选音质，失败自动降级。
 - **MV 背景**（默认关闭）：在歌曲详情页用歌曲名匹配在线 MV，作为歌词页背景并跟随歌曲进度播放；不下载、不缓存、不占磁盘。
+- **MV 播放完成后**：可选 **暂停（停在最后一帧，默认）**、**循环播放**、**纯色背景（颜色可选）**。
 - **匹配按相关度打分**：候选会先按歌名与艺人打分，**低于匹配度阈值的一律不用**（宁可这一首没有 MV，也不在不相干的视频上放）；播放量只在同分时作为参考。默认「按匹配度评分」，可在画面设置里换成「按搜索顺序」或「按播放量」。
 - **不会在两个候选之间来回换**：自动匹配沿用社区版 MvService 的置信度门槛——领先第二名 8 个百分点以上、或自身达到 86% 才会自动应用；两个候选分数接近时宁可先不显示，等你在候选列表里点一个。
 - **MV 设置面板**：固定在歌词页左下角，点标题栏展开或收起；面板上的 `⚙ 设置` 从右侧打开完整设置抽屉，**再点一下收起**。
   这个 `⚙` 按钮可以在画面设置里关掉（`歌词页显示「⚙ 设置」按钮`），关掉后侧栏 `🎬 MV 背景` 页和播放栏的 MV 按钮照旧。
 - **自动纠正**：切歌、进入歌曲详情页、点播放栏 MV 按钮都会**重新匹配并对齐到当前播放进度**，所以换歌之后画面不会停在上一首的 MV 上。
-- **设置页跟着歌走**：`🎬 MV 背景` 页里的「当前歌曲」与候选列表随正在播放的歌实时刷新——**MV 背景关着也一样跟**；**「按标题搜索 B 站」的结果只属于搜索它的那首歌**，切歌后自动换成新歌的候选，不会一直挂着上一首的搜索列表。
+- **设置页跟着歌走**：`🎬 MV 背景` 页里的「当前歌曲」与候选列表随正在播放的歌实时刷新——**MV 背景关着也一样跟**。
+- **挑不到满意的 MV 就交给浏览器**：面板上的「复制歌名并打开 B 站」会把「歌名 艺人」复制到剪贴板并用浏览器打开 B 站搜索，自己挑一条，再把链接粘进「自定义视频链接」绑定给这首歌（另有「只复制歌名」）。
 - **跟随软件主题**：设置面板与抽屉用软件自己的亮色/暗色主题，文字始终可读（亮色主题下不再出现深底 + 深字）。
-- **MV 播完之后**：可选 **暂停（停在最后一帧，默认）**、**循环播放**、**纯色背景（颜色可选）**。
+- **侧栏图标**：两个页面用的是和软件同款的描边图标（多平台音源是地球，MV 背景是场记板），不再是 emoji。
 - **分区可折叠**：设置按「启用 / 状态 / 匹配 / 画面 / 同步 / 引擎」分成六个分区，每区标题右侧有 ▾ 折叠展开，展开状态会被记住；每个开关下面都有说明小字。
 - **按钮点击有反馈**：任何按钮按下都有明显的颜色变化与高光，「点到了没有」不用猜。
 - **播放栏 MV 按钮**：**有 MV 在屏幕上时才亮**（亮色 + 点），图标是社区版同款场记板。亮着点它就是关掉 MV 背景；暗着点它——在歌曲详情页上是重新匹配这首歌（不会离开页面），在别的页面上是打开 MV 背景并进入歌曲详情页。
@@ -54,7 +56,7 @@
 ## 安装
 
 1. 到 [**Releases**](https://github.com/ChenyangLT/ECHO-Multi-Music-Sources/releases/latest) 下载
-   **`echo.multi-music-sources-2.0.6.echomod`**；
+   **`echo.multi-music-sources-2.1.0.echomod`**；
 2. 把它拖进模组加载器的 Mods 页面，或直接放进加载器的 `Mods/` 目录；
 3. 在加载器里**启用「ECHO 多平台音源」**，然后重启软件；
 4. 左侧边栏会出现 **♫ 多平台音源** 与 **🎬 MV 背景** 两个页面。
@@ -155,7 +157,7 @@ and survives a restart. The default picture is **“Default (fits left & right)�
 scaled to exactly the width of the window and follows resizing, with the height left free.
 
 **Requirements** — Windows 10/11 x64 and [ShinawaseLoader](https://github.com/ChunchunOwO/ShinawaseLoader)
-1.6.7+ (tested with 1.7.2). Grab `echo.multi-music-sources-2.0.6.echomod` from
+1.6.7+ (tested with 1.7.2). Grab `echo.multi-music-sources-2.1.0.echomod` from
 [**Releases**](https://github.com/ChenyangLT/ECHO-Multi-Music-Sources/releases/latest), drop it into
 the loader's Mods page, enable it and restart.
 
