@@ -1775,9 +1775,13 @@ const run = async () => {
       await settle(2);
       check(
         'a finished background restarts instead of being dropped',
-        String(lyricsPage.querySelector('.mms-backdrop-video')?.src).startsWith('echo-mv://')
+        // Any source counts: which acquisition step produced it (the engine's
+        // echo-mv:// stream, the loopback proxy, the progressive MP4) is not what
+        // this asserts — only that a video is still attached and not released.
+        Boolean(lyricsPage.querySelector('.mms-backdrop-video')?.src)
           && !calls.some((call) => call.method === 'mvRelease'),
-        calls.filter((call) => call.method === 'mvRelease').length ? 'released' : 'still attached',
+        `src=${String(lyricsPage.querySelector('.mms-backdrop-video')?.src || '(none)').slice(-26)} `
+          + `releases=${calls.filter((call) => call.method === 'mvRelease').length}`,
       );
     }
 
@@ -3380,6 +3384,139 @@ const run = async () => {
     pressed?.click();
     const flag = pressed?.dataset?.feedback ?? pressed?.getAttribute?.('data-feedback');
     check('a pressed button shows feedback', flag === 'true', `feedback=${flag}`);
+  }
+
+  // --- an unvalidated fallback must not pick the MV -------------------------
+  // Reported: 「正在搜索 優等生 (feat. 初音ミク)」 then the background played
+  // 【本家】月が綺麗ねと言われたい！ — a different song by the same voice, 45%
+  // similarity, on a song whose own title appears in none of the candidates.
+  //
+  // The name search found nothing that cleared the threshold, but
+  // acquireEngineVideo() still fell through to the community's temporary-playback
+  // route, which resolves whatever Bilibili ranks first for the query and never
+  // judges whether it is this song. That route is only a resolver for a candidate we
+  // already accepted, so what it returns must score for the track like any other.
+  {
+    // The background only matches while the feature is on and the song detail page
+    // exists; an earlier section turned it off and removed the page.
+    echoExternalMod.config.mvEnabled = true;
+    echoExternalMod.config.songBackgroundEnabled = true;
+    documentShim.body.append(lyricsPage);
+    await settle(3);
+    // No candidate from either search scores for this track.
+    mainResponses.mvSearchNetworkCandidatesForSnapshot = { ok: true, result: [] };
+    mainResponses.findMvCandidates = { ok: true, result: [] };
+    mainResponses.mvSelectVideo = { ok: false, error: 'nothing to select' };
+    mainResponses.prepareMvProgressive = { ok: false, error: 'no progressive stream' };
+    // The temporary route answers with an unrelated song, as Bilibili would.
+    mainResponses.mvGetTemporaryPlayableForSnapshot = {
+      ok: true,
+      result: {
+        id: 'temporary:unrelated',
+        sourceId: 'BVUNRELATED',
+        title: '【本家】月が綺麗ねと言われたい！ - 初音ミク【カササギ】',
+        provider: 'bilibili',
+        providerUrl: 'https://www.bilibili.com/video/BVUNRELATED',
+        mediaUrl: 'echo-mv://ephemeral/unrelated',
+        qualityLabel: '1080P',
+        durationSeconds: 200,
+        offsetMs: 0,
+        playableInApp: true,
+      },
+    };
+    // The background only matches while the song detail page exists, and an earlier
+    // section removed it.
+    await settle(2);
+    player.status = async () => ({
+      currentTrackId: 'streaming:netease:777',
+      trackId: 'streaming:netease:777',
+      // The poll reads the track out of the status; a bare id for a track that was
+      // never registered resolves to null and no match is attempted at all.
+      currentTrack: {
+        id: 'streaming:netease:777',
+        title: '優等生 (feat. 初音ミク)',
+        artist: 'Shino / 初音ミク',
+        duration: 181,
+        mediaType: 'streaming',
+        provider: 'netease',
+        providerTrackId: '777',
+      },
+      title: '優等生 (feat. 初音ミク)',
+      artist: 'Shino / 初音ミク',
+      duration: 181,
+      isPlaying: true,
+      position: 1,
+    });
+    await settle(6);
+    const applied = String(lyricsPage.querySelector('.mms-backdrop-video')?.src || '');
+    check(
+      'an unrelated temporary stream is not attached for the track',
+      !applied.includes('unrelated'),
+      'src=' + (applied.slice(-34) || '(none)'),
+    );
+    check(
+      'nothing clearing the threshold leaves the background without a video',
+      !applied || applied === 'null',
+      'src=' + (applied.slice(-34) || '(none)'),
+    );
+
+    // Restore what the later sections rely on.
+    delete mainResponses.mvGetSelected;
+    mainResponses.mvSearchNetworkCandidatesForSnapshot = {
+      ok: true,
+      result: [{
+        id: 'cand-1',
+        title: '晴天 周杰伦 MV',
+        uploader: 'uploader',
+        url: 'https://www.bilibili.com/video/BVTEST1',
+        providerUrl: 'https://www.bilibili.com/video/BVTEST1',
+        score: 0.93,
+        viewCount: 1_200_000,
+        durationSeconds: 269,
+        reasons: ['标题匹配'],
+        playableInApp: true,
+      }],
+    };
+    mainResponses.mvGetTemporaryPlayableForSnapshot = {
+      ok: true,
+      result: {
+        id: 'temporary:token-1',
+        sourceId: 'BVTEST1',
+        title: '晴天 (Live)',
+        provider: 'bilibili',
+        providerUrl: 'https://www.bilibili.com/video/BVTEST1',
+        mediaUrl: 'echo-mv://ephemeral/token-1',
+        qualityLabel: '1080P',
+        durationSeconds: 269,
+        offsetMs: 0,
+        playableInApp: true,
+      },
+    };
+    mainResponses.mvSelectVideo = {
+      ok: true,
+      result: {
+        id: 'video-1',
+        sourceId: 'BVTEST1',
+        title: '晴天 MV',
+        provider: 'bilibili',
+        providerUrl: 'https://www.bilibili.com/video/BVTEST1',
+        mediaUrl: 'echo-mv://stream/video-1/bilibili-qn-80',
+        qualityLabel: '1080P',
+        durationSeconds: 269,
+        offsetMs: 0,
+        playableInApp: true,
+      },
+    };
+    player.status = async () => ({
+      currentTrackId: 'streaming:netease:1',
+      trackId: 'streaming:netease:1',
+      title: '晴天',
+      artist: '周杰伦',
+      duration: 269,
+      isPlaying: true,
+      position: 1,
+    });
+    await settle(4);
   }
 
   // --- the MV offset is remembered per song --------------------------------

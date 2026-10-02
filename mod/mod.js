@@ -3318,7 +3318,25 @@ const acquireEngineVideo = async (track, best) => {
       ...request,
       query: best?.title || query,
     });
-    if (video?.mediaUrl) return video;
+    // The temporary-playback route resolves a stream for whatever Bilibili ranks
+    // first for the query and does not judge whether it is this song, so on its own
+    // it hands back unrelated videos (a different song by the same voice, at ~45%
+    // similarity). It is a resolver for a candidate we already accepted, never a way
+    // to skip the threshold — so what it returns is scored like any other candidate
+    // and dropped when it does not clear the bar.
+    if (video?.mediaUrl) {
+      const title = String(video.title || '').trim();
+      if (!title) return null;
+      const uploader = String(video.artist ?? video.uploader ?? '').trim();
+      // Scored against the TRACK (its title/artist), not against the search string
+      // sent to Bilibili — that one IS this video's title, so it would always match.
+      const score = candidateScore({ title, uploader }, track, backdropQueryFor(track));
+      if (Number(score) < Number(backgroundConfig().threshold)) {
+        backdrop.lastError = copy.testNoMatch;
+        return null;
+      }
+      return video;
+    }
   } catch {
     /* fall through to the progressive fallback */
   }
@@ -3568,6 +3586,18 @@ const loadBackdropFor = async (track) => {
   const scored = scoreCandidateList(candidates, track, query);
   setBackdropCandidates(scored, snapshotRequestFor(track, query), String(trackKey(track)));
   const best = chooseBackdropCandidate(scored) || { id: '', title: track?.title || '', uploader: null, url: null };
+  // Publish this round's candidates as the track's list. The drawer renders
+  // `state.backgroundTest`, which used to be written only by the manual
+  // 「为当前歌曲匹配候选」 press — so on a track change (next track, autoplay) the list
+  // stayed on the previous song until the user pressed something. Every match now
+  // records its own round, with the track it belongs to, so the list follows the
+  // song on its own.
+  state.backgroundTest = {
+    forTrackId: String(trackKey(track)),
+    track,
+    result: { mode: settings.matchMode, query, candidates: scored, chosen: best },
+  };
+  state.backgroundTestFor = trackSignature(track, trackKey(track));
   const bvid = bvidOf(best.id);
   if (bvid) {
     backdrop.candidate = { bvid, url: best.url, title: best.title };
