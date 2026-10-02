@@ -7,8 +7,11 @@
 [![Version](https://img.shields.io/badge/version-2.1.1-7c5cff?style=flat-square)](https://github.com/ChenyangLT/ECHO-Multi-Music-Sources/releases)
 [![License](https://img.shields.io/badge/license-LGPL--3.0-7c5cff?style=flat-square)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%20%2F%2011%20x64-22c55e?style=flat-square)]()
+[![官网](https://img.shields.io/badge/%E5%AE%98%E7%BD%91-%E6%88%AA%E5%9B%BE%E4%B8%8E%E7%A4%BA%E4%BE%8B-7c5cff?style=flat-square)](https://chenyanglt.github.io/ECHO-Multi-Music-Sources/)
 
 </div>
+
+> **官网（截图、MV 匹配示例、安装步骤）**：<https://chenyanglt.github.io/ECHO-Multi-Music-Sources/>
 
 ---
 

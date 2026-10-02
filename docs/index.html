@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>多平台音源 · ECHO Multi Music Sources</title>
+<meta name="description" content="把 9 个在线音乐平台接进 ECHO 的插件：搜索、串流播放、歌单、歌词、MV 背景。">
+<meta property="og:title" content="多平台音源 · ECHO Multi Music Sources">
+<meta property="og:description" content="把 9 个在线音乐平台接进 ECHO：搜索、串流播放、歌单、歌词、MV 背景。">
+<meta property="og:image" content="assets/ui-lyrics-mv.png">
+<link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="wrap topbar-inner">
+    <a class="brand" href="#top">
+      <img src="assets/icon.svg" alt="" width="26" height="26">
+      <span>多平台音源</span>
+    </a>
+    <nav class="topnav">
+      <a href="#features">功能</a>
+      <a href="#examples">示例</a>
+      <a href="#install">安装</a>
+      <a class="topnav-cta" href="https://github.com/ChenyangLT/ECHO-Multi-Music-Sources/releases/latest">下载</a>
+    </nav>
+  </div>
+</header>
+
+<main id="top">
+
+  <section class="hero">
+    <div class="wrap hero-inner">
+      <div class="hero-copy">
+        <p class="eyebrow">ECHO 插件 · Windows</p>
+        <h1>把九个音乐平台<br>装进你的播放器</h1>
+        <p class="lede">
+          网易云、QQ 音乐、酷狗、哔哩哔哩、YouTube、SoundCloud、Spotify、TIDAL、Qobuz ——
+          搜索、串流播放、歌单、歌词、MV 背景，全在一个侧栏页面里。
+          播放地址即用即取，<strong>不下载、不写曲库</strong>。
+        </p>
+        <div class="cta">
+          <a class="btn btn-primary" href="https://github.com/ChenyangLT/ECHO-Multi-Music-Sources/releases/latest">
+            下载最新版
+          </a>
+          <a class="btn btn-ghost" href="https://github.com/ChenyangLT/ECHO-Multi-Music-Sources">GitHub</a>
+        </div>
+        <p class="meta">v2.1.1 · LGPL-3.0-only · 需要 <a href="https://github.com/ChunchunOwO/ShinawaseLoader">ShinawaseLoader</a></p>
+      </div>
+      <figure class="hero-shot">
+        <img src="assets/ui-lyrics-mv.png" alt="歌词页上的 MV 背景">
+        <figcaption>歌词页 · MV 作为背景跟随歌曲播放</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <section class="platforms">
+    <div class="wrap">
+      <ul class="chips">
+        <li>网易云音乐</li><li>QQ 音乐</li><li>酷狗音乐</li><li>哔哩哔哩</li><li>YouTube</li>
+        <li>SoundCloud</li><li>Spotify</li><li>TIDAL</li><li>Qobuz</li>
+      </ul>
+    </div>
+  </section>
+
+  <section id="features" class="section">
+    <div class="wrap">
+      <h2>功能</h2>
+      <div class="grid">
+        <article class="card">
+          <h3>搜索与串流播放</h3>
+          <p>歌曲 / 专辑 / 艺人 / 歌单四类结果，单曲播放、播放全部、加入队列。走播放器自己的播放链路，队列、歌词、音效的表现和本地歌曲一致。</p>
+        </article>
+        <article class="card">
+          <h3>我的歌单</h3>
+          <p>打开插件页就是这一页：登录后的账号歌单、收藏夹、稍后再看、每日推荐，整列表播放。粘贴歌单链接即可导入。</p>
+        </article>
+        <article class="card">
+          <h3>查询与保存</h3>
+          <p>点「保存到本地」的歌单存在插件自己的存储里，之后离线也能打开。音质可选，失败自动降级。</p>
+        </article>
+        <article class="card">
+          <h3>MV 背景</h3>
+          <p>歌曲详情页按歌名匹配在线 MV，作为歌词页背景并跟随歌曲进度播放。默认「左右贴合」：画面缩放到两侧恰好贴住窗口宽度。</p>
+        </article>
+        <article class="card">
+          <h3>按相关度打分，不用不相干的视频</h3>
+          <p>候选先按歌名与艺人打分，低于匹配度阈值的一律不用；两个候选分数接近时宁可不显示，也不来回换。挑不到满意的可以一键复制歌名并打开 B 站自己找。</p>
+        </article>
+        <article class="card">
+          <h3>MV 播放完成后</h3>
+          <p>可选暂停（停在最后一帧，默认）、循环播放、纯色背景（颜色可选）。</p>
+        </article>
+        <article class="card">
+          <h3>跟着软件走</h3>
+          <p>设置界面跟随亮色 / 暗色主题，文字始终可读；侧栏图标与软件同款；分区可折叠并记住展开状态；按钮按下都有明显反馈。</p>
+        </article>
+        <article class="card">
+          <h3>自动纠正</h3>
+          <p>切歌、进详情页、点播放栏 MV 按钮都会重新匹配并对齐到当前播放进度，换歌之后画面不会停在上一首的 MV 上。</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section id="examples" class="section">
+    <div class="wrap">
+      <h2>MV 匹配示例</h2>
+      <p class="section-lede">下面三张都是实机截图：左侧是当前歌曲，画面就是它匹配到的 MV。</p>
+
+      <div class="examples">
+        <figure class="example">
+          <img src="assets/example-summer.png" alt="《别把夏天关掉》的 MV 背景">
+          <figcaption>
+            <strong>别把夏天关掉</strong>
+            <span>乐小君 / 洛天依</span>
+            <em>匹配到 B 站投稿「【洛天依原创】别把夏天关掉」</em>
+          </figcaption>
+        </figure>
+        <figure class="example">
+          <img src="assets/example-passing.png" alt="《经过》的 MV 背景">
+          <figcaption>
+            <strong>经过</strong>
+            <span>张杰 / HOYO-MiX</span>
+            <em>匹配到《原神》四周年主题曲《经过》官方 MV</em>
+          </figcaption>
+        </figure>
+        <figure class="example">
+          <img src="assets/example-moon.png" alt="《好想听你说月色很美》的 MV 背景">
+          <figcaption>
+            <strong>好想听你说月色真美</strong>
+            <span>莫怵kasn / 初音ミク</span>
+            <em>匹配到初音未来《月が綺麗ねと言われたい！》中文填词版</em>
+          </figcaption>
+        </figure>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="wrap">
+      <h2>界面</h2>
+      <div class="grid grid-2">
+        <figure class="shot">
+          <img src="assets/ui-playlists.png" alt="我的歌单页面">
+          <figcaption>我的歌单 · 账号歌单、每日推荐、本地保存</figcaption>
+        </figure>
+        <figure class="shot">
+          <img src="assets/ui-search.png" alt="搜索页面">
+          <figcaption>搜索 · 九个平台，随时切换音源</figcaption>
+        </figure>
+        <figure class="shot">
+          <img src="assets/ui-mv-settings.png" alt="MV 背景设置页">
+          <figcaption>MV 背景设置 · 分区可折叠</figcaption>
+        </figure>
+        <figure class="shot">
+          <img src="assets/ui-mv-drawer.png" alt="歌词页的设置抽屉">
+          <figcaption>歌词页 · 从右侧打开设置抽屉</figcaption>
+        </figure>
+      </div>
+    </div>
+  </section>
+
+  <section id="install" class="section">
+    <div class="wrap">
+      <h2>安装</h2>
+      <ol class="steps">
+        <li>到 <a href="https://github.com/ChenyangLT/ECHO-Multi-Music-Sources/releases/latest">Releases</a> 下载 <code>echo.multi-music-sources-2.1.1.echomod</code>。</li>
+        <li>把它拖进模组加载器的 Mods 页面，或直接放进加载器的 <code>Mods/</code> 目录。</li>
+        <li>在加载器里启用「ECHO 多平台音源」，重启软件。</li>
+        <li>左侧边栏出现 <strong>多平台音源</strong> 与 <strong>MV 背景</strong> 两个页面。</li>
+      </ol>
+      <div class="requirements">
+        <h3>环境要求</h3>
+        <ul>
+          <li>Windows 10 / 11 x64</li>
+          <li><a href="https://github.com/ChunchunOwO/ShinawaseLoader">ShinawaseLoader</a> 1.6.7+（在 1.7.2 / 1.7.4 上测试）</li>
+          <li>各平台账号按需登录：高音质与会员曲目需要，哔哩哔哩免登录也可用</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section class="section faq">
+    <div class="wrap">
+      <h2>常见问题</h2>
+      <details>
+        <summary>歌曲会下载到电脑上吗？</summary>
+        <p>不会。播放地址即用即取，不写曲库、不落盘。只有你主动点「保存到本地」的歌单会保存歌单结构。</p>
+      </details>
+      <details>
+        <summary>为什么某首歌没有 MV 背景？</summary>
+        <p>没有候选达到匹配度阈值。可以在「MV 背景」页把阈值调低、或把搜索后缀留空，也可以用「复制歌名并打开 B 站」自己挑一条，把链接粘进「自定义视频链接」绑定给这首歌。</p>
+      </details>
+      <details>
+        <summary>支持哪些平台播放？</summary>
+        <p>九个平台的搜索与播放都可用；歌词与 MV 的支持情况按平台不同，具体见仓库 README 的支持情况表。</p>
+      </details>
+    </div>
+  </section>
+
+</main>
+
+<footer class="footer">
+  <div class="wrap footer-inner">
+    <div>
+      <strong>多平台音源 · ECHO Multi Music Sources</strong>
+      <p>LGPL-3.0-only。模组加载与播放桥接能力来自 <a href="https://github.com/ChunchunOwO/ShinawaseLoader">ShinawaseLoader</a>（作者 ChunchunOwO）。</p>
+      <p class="muted">音源仅用于个人学习与自用，请遵守各音乐平台的服务条款；本项目与任何平台均无隶属关系。</p>
+    </div>
+    <div class="footer-links">
+      <a href="https://github.com/ChenyangLT/ECHO-Multi-Music-Sources">GitHub</a>
+      <a href="https://github.com/ChenyangLT/ECHO-Multi-Music-Sources/releases/latest">Releases</a>
+      <a href="https://github.com/ChenyangLT/ECHO-Multi-Music-Sources/issues">反馈</a>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>
