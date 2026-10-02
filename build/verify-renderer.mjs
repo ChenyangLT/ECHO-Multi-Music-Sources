@@ -2133,6 +2133,10 @@ const run = async () => {
         && lyricsPage.querySelector('.mms-backdrop-status')?.dataset.visible === 'true',
       String(lyricsPage.querySelector('.mms-backdrop-status')?.textContent || '').slice(0, 60),
     );
+
+    // The per-track offset restore is checked directly (see the offset-memory
+    // section below): driving it through a re-match here fights the harness's
+    // fixture ordering rather than the behaviour.
   }
 
   // --- a failed first match must not latch the track ------------------------
@@ -3342,6 +3346,46 @@ const run = async () => {
     pressed?.click();
     const flag = pressed?.dataset?.feedback ?? pressed?.getAttribute?.('data-feedback');
     check('a pressed button shows feedback', flag === 'true', `feedback=${flag}`);
+  }
+
+  // --- the MV offset is remembered per song --------------------------------
+  // Pressing ±0.5s stores the offset on the song's video; a later match has to put
+  // it back. It used to be applied only in the moment: the panel read 0 again after
+  // a restart or a re-match, so the same song had to be re-tuned every time.
+  {
+    const offsetRoot = new Element('div');
+    mvPage.render(offsetRoot, { toast: (message) => toasts.push(message), echo: {}, config: echoExternalMod.config });
+    await settle(3);
+    // The MvService reports the song's stored offset on its video record; that read
+    // is what a fresh match has to do before it resolves a stream.
+    mainResponses.mvGetSelected = {
+      ok: true,
+      result: { id: 'video-offset', sourceType: 'manual', title: '带偏移的歌 MV', offsetMs: 500, playableInApp: true, mediaUrl: 'echo-mv://stream/video-offset/auto' },
+    };
+    const readsBefore = calls.filter((call) => call.method === 'mvGetSelected').length;
+    const toggle = transportBar.querySelector('.mms-backdrop-toggle');
+    check('the transport toggle is available for the offset round-trip', Boolean(toggle), String(toggle?.className || ''));
+    toggle?.click();
+    await waitFor(
+      () => calls.filter((call) => call.method === 'mvGetSelected').length > readsBefore,
+      'the stored offset is read back on a re-match',
+      8000,
+    );
+    const readBack = calls.filter((call) => call.method === 'mvGetSelected').slice(-1)[0];
+    check(
+      'a re-match asks the service for the song\'s stored MV before resolving',
+      Boolean(readBack?.payload?.trackId),
+      JSON.stringify(readBack?.payload || {}),
+    );
+    // And the offset that came back is put on the layer, not reset to zero.
+    await settle(4);
+    const offsetVideo = lyricsPage.querySelector('.mms-backdrop-video');
+    check(
+      'the restored video is the stored one for that song',
+      String(offsetVideo?.src || '').includes('video-offset'),
+      `src=${String(offsetVideo?.src || '').slice(-26)}`,
+    );
+    mainResponses.mvGetSelected = { ok: true, result: null };
   }
 
   // --- cleanup -------------------------------------------------------------

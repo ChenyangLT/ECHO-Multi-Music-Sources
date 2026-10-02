@@ -1994,6 +1994,9 @@ const backdrop = {
   // candidate the poll could not resolve). A re-match for the same song skips
   // them instead of cycling through the same videos again.
   rejected: new Set(),
+  // The song's saved MV offset, read before a fresh match starts and re-applied to
+  // every stream that match resolves (see playBackdropSource).
+  pendingOffsetMs: 0,
   // Tracks this session played, so the current track can be identified from the
   // player's status without re-reading ECHO's queue shape.
   known: new Map(),
@@ -3183,6 +3186,13 @@ const playBackdropSource = (url, best, track, source) => {
   // link/file) — a URL without an owner was read as "stale" by the supervisor and
   // re-matched on the next tick, which is what made a correct video flip away.
   backdrop.matchedFor = trackSignature(track, backdrop.trackId ?? track?.stableKey ?? track?.id);
+  // The song's own MV timing goes back on the stream that was just resolved: the
+  // offset is a per-track setting, so it has to survive a restart, a re-match and
+  // an alternate acquisition step, not only the moment the user pressed a button.
+  if (backdrop.pendingOffsetMs) {
+    backdrop.offsetMs = Number(backdrop.pendingOffsetMs) || 0;
+    state.mvOffset = backdrop.offsetMs;
+  }
   // This layer now owns a stream: that is what reveals it (and hands the backdrop
   // over), exactly like ECHO-main rendering `.lyrics-mv-background` once a URL
   // exists. A new source has no frames yet, so the playing flag is cleared.
@@ -3480,6 +3490,14 @@ const loadBackdropFor = async (track) => {
   // left in the layer is dropped: it is the previous song's until this one
   // replaces it, and leaving it playing is what the automatic correction fixes.
   dropBackdropVideo();
+  // Remember the song's saved offset BEFORE anything here clears it: the video's
+  // own record carries it (MvService stores the per-track offset on the video), and
+  // a fresh match must put it back. Without this the offset survived only for a
+  // manually bound video — an automatically matched song came back at zero.
+  const savedOffsetMs = await readStoredOffsetMs(track);
+  if (token !== backdrop.lookupToken) return false;
+  // Kept for the whole round, including every acquisition step's `playBackdropSource`.
+  backdrop.pendingOffsetMs = savedOffsetMs;
   const query = backdropQueryFor(track);
   // No title → no query. Searching anyway would send the bare suffix ("MV") to
   // Bilibili and match some unrelated popular video, so this round is skipped and
@@ -5218,6 +5236,30 @@ const engineSetQuality = async (qualityId) => {
     reportError(error);
   }
   renderSoon();
+};
+
+/**
+ * Reads the offset this song's MV is stored with (0 when there is none yet).
+ *
+ * The community service keeps the offset on the video it resolved for the track, so
+ * this is a read of the same record a re-match is about to replace.
+ */
+const readStoredOffsetMs = async (track) => {
+  const id = trackKey(track);
+  if (!id) return 0;
+  try {
+    const selected = await invokeMain('mvGetSelected', { trackId: String(id) });
+    const value = Number(selected?.offsetMs);
+    return Number.isFinite(value) ? value : 0;
+  } catch {
+    return 0;
+  }
+};
+
+/** Whether the video in the layer belongs to this track. */
+const backdropOwns = (track) => {
+  if (!track || !backdrop.matchedFor) return false;
+  return backdrop.matchedFor === trackSignature(track, backdrop.trackId ?? trackKey(track));
 };
 
 /** Per-track MV offset (ECHO-main allows ±10 minutes, in 100 ms steps). */
