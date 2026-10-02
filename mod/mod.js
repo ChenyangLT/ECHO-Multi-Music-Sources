@@ -4405,30 +4405,49 @@ const rematchCurrentTrack = async (reason = '') => {
 };
 
 /**
+ * Whether the transport MV switch reads as "on".
+ *
+ * The button is the feature's own switch, so it is lit whenever the MV background is
+ * enabled — that is what "打开后播放栏右侧的 MV 按钮点亮" has always promised. It is
+ * brighter again once the song page is actually showing a video, and dim while the
+ * feature is off.
+ *
+ * (It used to be lit only while a video was on screen, so switching the background
+ * on left the button dark until the song page happened to load an MV.)
+ */
+const playerToggleLevel = () => {
+  if (!backdropEnabled()) return 'off';
+  return backdropOnScreen() ? 'playing' : 'on';
+};
+
+/**
  * The transport switch.
  *
- * Lit (accent colour + the transport's own dot, and lit only) while the song
- * detail page is showing an MV that is really on screen. Anywhere else — another
- * page, a match still resolving, a track without a match — it stays dim.
+ * Three states, each with its own colour:
+ *   off      dim, muted text — presses switch the MV background on
+ *   on       accent, because the feature is enabled
+ *   playing  accent + the transport's dot, because a video is on screen
  *
- * A press follows the light: while lit it switches the MV background off, while
- * dim it brings the MV up. On the song detail page that means a re-match plus a
- * seek (no navigation, which would throw the user off the page); anywhere else it
- * switches the background on, walks to the page and matches right away.
+ * A press follows the light: while lit (on / playing) it switches the MV background
+ * off, while dim it brings the MV up. On the song detail page that means a re-match
+ * plus a seek (no navigation, which would throw the user off the page); anywhere else
+ * it switches the background on, walks to the page and matches right away.
  */
 const syncPlayerToggle = () => {
   const bar = transportBar();
   if (!bar) return;
-  const onScreen = backdropOnScreen();
+  const level = playerToggleLevel();
+  const lit = level !== 'off';
   const enabled = backdropEnabled();
-  const title = onScreen
+  const title = level === 'playing'
     ? `${copy.backdrop} · ${copy.backdropVisible}`
     : `${copy.backdrop} · ${enabled ? copy.backdropOn : copy.backdropOff}${lyricsPage() && enabled ? copy.backdropPressToReload : ''}`;
   const existing = bar.querySelector(`.${PLAYER_TOGGLE_CLASS}`);
   if (existing) {
-    existing.dataset.active = String(onScreen);
-    existing.classList.toggle('is-soft-active', onScreen);
-    existing.setAttribute('aria-pressed', String(onScreen));
+    existing.dataset.active = String(lit);
+    existing.dataset.level = level;
+    existing.classList.toggle('is-soft-active', lit);
+    existing.setAttribute('aria-pressed', String(lit));
     existing.title = title;
     existing.setAttribute('aria-label', title);
     return;
@@ -4437,25 +4456,27 @@ const syncPlayerToggle = () => {
   const toggle = h('button', `icon-button transport-media-button ${PLAYER_TOGGLE_CLASS}`);
   toggle.type = 'button';
   toggle.dataset.workshopIcon = 'transport-mms-background';
-  toggle.dataset.active = String(onScreen);
-  toggle.classList.toggle('is-soft-active', onScreen);
+  toggle.dataset.active = String(lit);
+  toggle.dataset.level = level;
+  toggle.classList.toggle('is-soft-active', lit);
   toggle.title = title;
   toggle.setAttribute('aria-label', title);
-  toggle.setAttribute('aria-pressed', String(onScreen));
+  toggle.setAttribute('aria-pressed', String(lit));
   toggle.innerHTML = BACKDROP_ICON;
   toggle.addEventListener('click', () => {
     if (backdropOnScreen()) {
-      // Lit → the MV is on screen, so this press takes it away.
+      // A video is on screen, so this press takes it away.
       void setBackdropEnabled(false);
       return;
     }
     if (lyricsPage()) {
-      // Dim on the detail page → re-match the current track and seek it.
+      // Enabled but nothing on screen yet, or a stale match on the detail page:
+      // re-match this track and seek it.
       if (!backdropEnabled()) void setBackdropEnabled(true);
       void rematchCurrentTrack('button');
       return;
     }
-    // Dim elsewhere → bring the MV up and go where it is visible.
+    // Off (or no page yet) → bring the MV up and go where it is visible.
     if (!backdropEnabled()) void setBackdropEnabled(true);
     enterSongDetailPage();
     void pollBackdrop();
@@ -6866,17 +6887,21 @@ html[data-mms-hide-lyrics="true"] .lyrics-page .lyrics-left-panel::after{content
 .mms-lyrics-bg[data-ended="true"] .mms-backdrop-video{visibility:hidden}
 .mms-lyrics-bg[data-ended="true"]{background:var(--mms-ended-colour,#000)}
 .mms-backdrop-toggle{position:relative;display:inline-flex!important;align-items:center;justify-content:center}
-/* The transport MV button is lit (accent colour + a filled dot + the transport
-   underline ECHO draws from .is-soft-active / aria-pressed) ONLY while the song
-   detail page is showing an MV that is really on screen. Everywhere else — another
-   page, a match still resolving, a track without a match — it is dimmed, so the
-   light means "there is an MV to watch" and a dim press means "bring it up". The
-   repeated class and !important are needed to outrank ECHO's own
+/* The transport MV button is the feature's own switch, so it is lit whenever the MV
+   background is enabled — the config schema has always promised 「打开后播放栏右侧的
+   MV 按钮点亮」, and the lit state used to require a video on screen, which left the
+   button dark after switching the feature on.
+ 
+   Only the DIM state is styled here. Everything lit is left to ECHO's own transport
+   treatment (.icon-button.is-soft-active / [aria-pressed='true']), which already
+   paints the accent colour, the dot and the underline, and takes its colour from the
+   client's theme preset — so a light theme, a dark theme and every preset recolour
+   the button with no colour of our own. Overriding that from a mod is a losing game
+   anyway: the player bar sets its fill and pseudo-element rules with !important.
+ 
+   The repeated class and !important are needed to outrank ECHO's own
    .transport-media-button colour rule, which is itself !important. */
 html .player-bar .transport .mms-backdrop-toggle.mms-backdrop-toggle[data-active="false"]{color:color-mix(in srgb,var(--theme-muted-text,#64748b) 74%,transparent)!important;opacity:.66}
-html .player-bar .transport .mms-backdrop-toggle.mms-backdrop-toggle[data-active="true"]{color:var(--theme-accent-text-strong,var(--theme-accent-solid-bg,#4b55e8))!important;opacity:1}
-.mms-backdrop-toggle:after{position:absolute;top:3px;right:3px;width:5px;height:5px;border-radius:50%;background:currentColor;content:"";opacity:0;transition:opacity .18s ease}
-html .player-bar .transport .mms-backdrop-toggle.mms-backdrop-toggle[data-active="true"]:after{opacity:1}
 /* Status pill for the background match/resolution. It sits next to the
    video layer (the layer itself is transparent until it plays). */
 .mms-backdrop-status{position:absolute;left:50%;bottom:18px;transform:translateX(-50%);z-index:22;display:none;flex-direction:column;gap:6px;min-width:220px;max-width:min(520px,70%);padding:9px 14px;border:1px solid var(--theme-panel-border,#d8dee9);border-radius:12px;background:var(--mms-overlay-bg);color:var(--theme-page-text,#eef4fc);font:12px/1.4 -apple-system,system-ui,"Segoe UI",sans-serif;pointer-events:none;backdrop-filter:blur(6px)}

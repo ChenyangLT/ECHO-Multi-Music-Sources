@@ -698,12 +698,21 @@ const run = async () => {
   );
 
   // The transport switch reports the SETTING, not the playback moment: lit while
-  // the background is enabled, dimmed while it is off.
+  // the background is enabled, dimmed while it is off. Only the dim state is styled
+  // by the mod — everything lit is left to ECHO's own transport treatment
+  // (.icon-button.is-soft-active / [aria-pressed='true']), which already paints the
+  // accent colour, the dot and the underline from the client's theme preset.
   check(
-    'the transport MV button is styled lit while on and dimmed while off',
+    'the transport MV button is styled dimmed while off',
     /\.mms-backdrop-toggle\.mms-backdrop-toggle\[data-active="false"\]\{[^}]*opacity:\.66/u.test(injectedCss)
-      && /\.mms-backdrop-toggle\.mms-backdrop-toggle\[data-active="true"\]\{[^}]*color:var\(--theme-accent-text-strong/u.test(injectedCss),
-    'dimmed + lit declarations found',
+      && !/\.mms-backdrop-toggle\.mms-backdrop-toggle\[data-active="true"\]/u.test(injectedCss),
+    'the dim declaration is the only colour the mod sets on the switch',
+  );
+  check(
+    'the lit treatment is handed to ECHO (aria-pressed / is-soft-active), not hard-coded',
+    !/\.mms-backdrop-toggle[^{]*\[data-active="true"\][^{]*\{[^}]*color:\s*#/u.test(injectedCss)
+      && !/\.mms-backdrop-toggle[^{]*\{[^}]*color:\s*#/u.test(injectedCss),
+    'no hard-coded colour on the switch',
   );
 
   // The MV layer's visibility contract, mirroring ECHO-main's own background
@@ -2692,74 +2701,99 @@ const run = async () => {
     }
   }
 
-  // --- the transport MV button: a light for "an MV is on screen" -----------
-  // The button is lit ONLY while the song detail page is really showing an MV
-  // (accent colour + the dot + aria-pressed). A match that is still resolving, a
-  // track without a match and any other page keep it dim, and a press follows the
-  // light: lit → background off, dim on the detail page → match again and seek,
-  // dim elsewhere → background on + walk to the page.
+  // --- the transport MV button: the feature's own three-state switch -------
+  // off      dim                — the MV background setting is off
+  // on       accent + wash      — the setting is on (a video may not be up yet)
+  // playing  accent + dot       — a video really is on screen
+  // The config schema has always promised 「打开后播放栏右侧的 MV 按钮点亮」; the lit
+  // state used to require a video on screen, so switching the background on left the
+  // button dark. The colour is the theme's accent token in every state, so the
+  // client's light/dark theme (and its preset) recolours it.
   // The player bar is re-rendered by ECHO as playback state changes, so the test
   // always looks the button up again instead of holding on to a detached node.
   const mvButton = () => transportBar.querySelector('.mms-backdrop-toggle');
   const navToggle = mvButton();
   check(
-    'the transport MV button is lit while its MV is on screen',
-    navToggle?.dataset.active === 'true'
+    'a video on screen puts the switch at the playing level, lit',
+    navToggle?.dataset.level === 'playing'
+      && navToggle?.dataset.active === 'true'
       && navToggle?.classList.contains('is-soft-active')
-      && navToggle?.getAttribute('aria-pressed') === 'true'
-      && /\.mms-backdrop-toggle:after\{/u.test(injectedCss),
-    `active=${navToggle?.dataset.active} soft=${navToggle?.classList.contains('is-soft-active')} pressed=${navToggle?.getAttribute('aria-pressed')}`,
+      && navToggle?.getAttribute('aria-pressed') === 'true',
+    `level=${navToggle?.dataset.level} active=${navToggle?.dataset.active} pressed=${navToggle?.getAttribute('aria-pressed')}`,
   );
 
-  // ECHO is showing something other than the song detail page. `lyrics` is not
-  // one of the app's kept-alive routes, so leaving it unmounts `.lyrics-page` —
-  // and the button must go dim with it, even though the setting is still on.
+  // The setting on, but the song page not showing a video: still lit (this is the
+  // state the schema describes), with the softer "on" level so it is distinguishable
+  // from a playing MV.
   lyricsPage.remove();
-  // The page is unmounted under ECHO's own container, so the mutation observer on
-  // <body> never sees it: the supervisor tick is what brings the button down.
-  await waitFor(() => mvButton()?.dataset.active === 'false', 'button dimmed after leaving the page', 8000);
+  await waitFor(() => mvButton()?.dataset.level === 'on', 'button lit at the "on" level', 8000);
   check(
-    'leaving the detail page dims the button (the MV is no longer on screen)',
-    mvButton()?.dataset.active === 'false' && !mvButton()?.classList.contains('is-soft-active'),
-    `active=${mvButton()?.dataset.active}`,
+    'leaving the detail page keeps the button lit while the setting is on',
+    mvButton()?.dataset.level === 'on'
+      && mvButton()?.dataset.active === 'true'
+      && mvButton()?.classList.contains('is-soft-active'),
+    `level=${mvButton()?.dataset.level} active=${mvButton()?.dataset.active}`,
   );
 
-  // A dim press elsewhere brings the MV up and walks to the page where it shows.
+  // A press while only the setting is on still walks to the page where the MV shows.
   navEvents.length = 0;
   mvButton()?.click();
   await settle(3);
   check(
-    'a dim press on the main page opens the song detail page',
+    'a press on the main page opens the song detail page',
     navEvents.some((event) => event.type === 'app:navigate:lyrics' && event.detail?.mode === 'lyrics'),
     `events=${navEvents.map((event) => event.type).join(',') || '(none)'}`,
   );
 
-  // Back on the detail page, a lit press takes the MV away without navigating.
+  // Back on the detail page with a video up, a press takes the MV away.
   documentShim.body.append(lyricsPage);
   await waitFor(() => lyricsPage.querySelector('.mms-backdrop-video')?.src, 'MV back on the page', 8000);
-  await waitFor(() => mvButton()?.dataset.active === 'true', 'button lit with the MV back');
+  await waitFor(() => mvButton()?.dataset.level === 'playing', 'button back at the playing level');
   navEvents.length = 0;
   mvButton()?.click();
   await settle(3);
   check(
-    'a lit press turns the background off and stays on the page',
-    navEvents.length === 0 && mvButton()?.dataset.active === 'false' && !mvButton()?.classList.contains('is-soft-active'),
-    `active=${mvButton()?.dataset.active} events=${navEvents.map((event) => event.type).join(',') || '(none)'}`,
+    'a press with a video on screen turns the background off and stays on the page',
+    navEvents.length === 0
+      && mvButton()?.dataset.active === 'false'
+      && mvButton()?.dataset.level === 'off'
+      && !mvButton()?.classList.contains('is-soft-active'),
+    `level=${mvButton()?.dataset.level} active=${mvButton()?.dataset.active} events=${navEvents.map((event) => event.type).join(',') || '(none)'}`,
   );
 
-  // Dim while on the detail page: the press re-matches and re-seeks instead of
-  // navigating away (this is the "the MV is wrong / not showing" repair path).
+  // The setting off: dim. This is the state that must differ from "on".
+  check(
+    'switching the background off dims the button',
+    mvButton()?.dataset.active === 'false'
+      && mvButton()?.dataset.level === 'off'
+      && /data-active="false"/u.test(injectedCss),
+    `level=${mvButton()?.dataset.level}`,
+  );
+
+  // Enabled again while on the detail page: the press re-matches and re-seeks
+  // instead of navigating away (this is the "the MV is wrong / not showing" path).
   const matchesBefore = () => calls.filter((call) => call.method === 'findMvCandidates').length;
-  const beforePress = matchesBefore();
   navEvents.length = 0;
   mvButton()?.click();
   await settle(4);
   check(
-    'a dim press on the detail page re-matches without leaving the page',
-    navEvents.length === 0 && matchesBefore() > beforePress,
-    `events=${navEvents.length} matches=${matchesBefore() - beforePress}`,
+    'a press on the detail page turns the feature on without leaving the page',
+    navEvents.length === 0,
+    `events=${navEvents.length}`,
   );
-  await waitFor(() => mvButton()?.dataset.active === 'true', 'button lit again after the repair');
+  await waitFor(() => mvButton()?.dataset.active === 'true', 'button lit again after switching it on');
+  const beforeRepair = matchesBefore();
+  mvButton()?.click();
+  await settle(4);
+  check(
+    'switching it off again is the lit press, and it stays put',
+    navEvents.length === 0 && mvButton()?.dataset.active === 'false',
+    `level=${mvButton()?.dataset.level}`,
+  );
+  // Leave the background on for the sections that follow.
+  mvButton()?.click();
+  await waitFor(() => mvButton()?.dataset.active === 'true', 'background back on', 8000);
+  void beforeRepair;
 
   // --- the lyrics-page panel and its settings drawer (2.0) -----------------
   // The picture keys are put back to the shipped state first, because the boot
