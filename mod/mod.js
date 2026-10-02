@@ -282,6 +282,27 @@ const STRINGS = {
     engineDiagnostics: '复制诊断信息',
     engineDiagnosticsCopied: '已复制 MV 诊断信息',
     engineReload: '刷新引擎状态',
+    // ECHO 自身的歌词背景盖住 MV：一键把 ECHO 那边调开。
+    echoBgTitle: '被 ECHO 背景盖住？',
+    echoBgHint: 'ECHO 自己的歌词背景（「画境」/ 专辑封面背景）画在 MV 上面时，MV 其实在播、但一点都看不见。这个按钮改的是 ECHO 自己的设置，把歌词页换回 ECHO 默认样式，让模组的 MV 露出来。不会改模组里的画面、匹配、画质等设置。',
+    echoBgStyle: 'ECHO 歌词页样式',
+    echoBgImmersive: '沉浸封面',
+    echoBgMode: '背景模式',
+    echoBgCovering: '⚠ 正在盖住 MV',
+    echoBgClear: '✓ 不挡 MV',
+    echoBgUnknown: '还没读到 ECHO 的设置，点「刷新 ECHO 背景状态」读一次。',
+    echoBgUnavailable: '当前版本读不到 ECHO 的设置，只能手动去 ECHO 的设置里把歌词页样式改成默认。',
+    echoBgFix: '一键修复 MV 被遮挡',
+    echoBgFixHint: '关闭 ECHO 的「画境」/ 沉浸封面，歌词页样式改回默认',
+    echoBgFixed: '已修复：ECHO 歌词页已切回默认样式，MV 应该能看见了',
+    echoBgRestore: '恢复 ECHO 原设置',
+    echoBgRestoreHint: '把 ECHO 的歌词页样式改回修复之前的样子',
+    echoBgRestored: '已恢复 ECHO 原来的歌词背景设置',
+    echoBgNothingToRestore: '没有可恢复的记录——先点一次「一键修复」',
+    echoBgRefresh: '刷新 ECHO 背景状态',
+    echoBgWorking: '正在修改 ECHO 设置…',
+    on: '开',
+    off: '关',
     panelTitle: 'MV 面板',
     panelSettings: '⚙ 设置',
     drawerTitle: 'MV 背景设置',
@@ -562,6 +583,27 @@ const STRINGS = {
     engineDiagnostics: 'Copy diagnostics',
     engineDiagnosticsCopied: 'MV diagnostics copied',
     engineReload: 'Refresh engine state',
+    // ECHO's own lyrics background painting over the MV.
+    echoBgTitle: 'Hidden behind ECHO\'s own background?',
+    echoBgHint: 'When ECHO\'s lyrics background (its 「画境」/ album-art cover style) paints above the MV layer, the MV is playing but none of it is visible. This button writes ECHO\'s own settings and switches the lyrics page back to ECHO\'s default style so the mod\'s MV shows. It does not touch the mod\'s picture, matching or quality settings.',
+    echoBgStyle: 'ECHO lyrics page style',
+    echoBgImmersive: 'Immersive cover',
+    echoBgMode: 'Background mode',
+    echoBgCovering: '⚠ covering the MV',
+    echoBgClear: '✓ not blocking the MV',
+    echoBgUnknown: 'ECHO\'s settings have not been read yet — press "Refresh ECHO background state".',
+    echoBgUnavailable: 'This build cannot read ECHO\'s settings; set the lyrics page style back to default in ECHO\'s own settings.',
+    echoBgFix: 'Fix the hidden MV',
+    echoBgFixHint: 'Turns off ECHO\'s 「画境」/ immersive cover and restores the default lyrics page style',
+    echoBgFixed: 'Fixed: ECHO\'s lyrics page is back on its default style, the MV should be visible',
+    echoBgRestore: 'Restore ECHO\'s settings',
+    echoBgRestoreHint: 'Puts ECHO\'s lyrics page style back to what it was before the fix',
+    echoBgRestored: 'ECHO\'s original lyrics background settings are back',
+    echoBgNothingToRestore: 'Nothing to restore — press "Fix the hidden MV" first',
+    echoBgRefresh: 'Refresh ECHO background state',
+    echoBgWorking: 'Writing ECHO\'s settings…',
+    on: 'on',
+    off: 'off',
     panelTitle: 'MV panel',
     panelSettings: '⚙ Settings',
     drawerTitle: 'MV background settings',
@@ -762,6 +804,9 @@ const state = {
   // Background page: the community MV engine's state and the last match test.
   backgroundTest: null,
   backgroundTestFor: null,
+  // ECHO's own lyrics-background settings: what it is painting now, plus the values
+  // saved before 「一键修复」 so the change can be undone.
+  echoBackground: null,
   // The manual Bilibili search by title (the settings page's own query).
   // The signed-in account's own playlists / favourite folders (歌单 view).
   playlists: null,
@@ -5401,6 +5446,131 @@ const engineOpenExternal = async (videoId) => {
   }
 };
 
+/**
+ * ECHO's own lyrics background, and the switch that hides the MV behind it.
+ *
+ * ECHO can paint its own background over the MV layer: with the 「画境」(coverStage)
+ * page style plus the immersive-cover option it renders the album art in
+ * `.lyrics-cover-stage-artwork` — z-index 2, above this mod's layer at 0 — so the MV
+ * is playing but nothing of it can be seen. The immersive-cover style exists purely
+ * to show that art, which is exactly what the MV replaces, so the fix is to switch
+ * ECHO's lyrics page back to its default style. The previous values are kept so the
+ * choice is reversible.
+ */
+const ECHO_BACKGROUND_KEYS = Object.freeze({
+  lyricsPageStyle: 'default',
+  lyricsImmersiveCoverStyleEnabled: false,
+  lyricsImmersiveCoverGlassEnabled: false,
+  lyricsRoseVinylGradientEnabled: false,
+  lyricsBackgroundMode: 'theme',
+  lyricsThemeFilterEnabled: false,
+  lyricsCoverOpacityPercent: 0,
+  lyricsCoverBlurPx: 0,
+});
+
+/** The ECHO settings namespace, as the loader hands it to mods. */
+const echoAppApi = () => echo.app || window.echo?.app || null;
+
+/** Describes what ECHO is currently painting. */
+const describeEchoBackground = (settings) => {
+  if (!settings) return copy.echoBgUnknown;
+  const style = String(settings.lyricsPageStyle || 'default');
+  const immersive = settings.lyricsImmersiveCoverStyleEnabled === true;
+  const parts = [
+    `${copy.echoBgStyle}：${style}`,
+    `${copy.echoBgImmersive}：${immersive ? copy.on : copy.off}`,
+    `${copy.echoBgMode}：${settings.lyricsBackgroundMode || '-'}`,
+  ];
+  // Say plainly whether this is the combination that hides the MV.
+  const covering = style === 'coverStage' || style === 'roseVinyl' || immersive;
+  parts.push(covering ? copy.echoBgCovering : copy.echoBgClear);
+  return parts.join(' · ');
+};
+
+/** Reads ECHO's lyrics-background settings into the page's state. */
+const readEchoBackground = async () => {
+  const api = echoAppApi();
+  if (!api?.getSettings) {
+    state.echoBackground = { line: copy.echoBgUnavailable, saved: state.echoBackground?.saved || null };
+    renderSoon();
+    return null;
+  }
+  try {
+    const settings = await api.getSettings();
+    const previous = state.echoBackground?.saved || null;
+    state.echoBackground = { settings, saved: previous, line: describeEchoBackground(settings) };
+  } catch (error) {
+    state.echoBackground = { line: `${copy.echoBgUnavailable} ${error?.message || ''}`.trim(), saved: state.echoBackground?.saved || null };
+  }
+  renderSoon();
+  return state.echoBackground?.settings || null;
+};
+
+/** Applies the switch that lets the MV show through, remembering the old values. */
+const repairEchoBackground = async () => {
+  const api = echoAppApi();
+  if (!api?.setSettings) {
+    reportNotice(copy.echoBgUnavailable);
+    return;
+  }
+  state.busy = copy.echoBgWorking;
+  renderSoon();
+  try {
+    const current = await api.getSettings();
+    // Only remember the first run, so pressing the button twice cannot overwrite the
+    // user's real values with the repaired ones.
+    if (!state.echoBackground?.saved) {
+      const saved = {};
+      for (const key of Object.keys(ECHO_BACKGROUND_KEYS)) saved[key] = current?.[key];
+      state.echoBackground = { ...(state.echoBackground || {}), saved };
+    }
+    const updated = await api.setSettings({ ...ECHO_BACKGROUND_KEYS });
+    state.echoBackground = { ...(state.echoBackground || {}), settings: updated, line: describeEchoBackground(updated) };
+    reportNotice(copy.echoBgFixed);
+    // The page's own signature carries ECHO's style, so the force is what makes the
+    // status line and the 恢复 button change in the same press.
+    refreshBackgroundPage({ force: true });
+    // ECHO re-renders the page from its own settings; the MV layer is re-asserted so
+    // it is a child of the page again if React rebuilt it.
+    backdrop.node = null;
+    void pollBackdrop();
+  } catch (error) {
+    reportError(error);
+  } finally {
+    state.busy = null;
+    renderSoon();
+  }
+};
+
+/** Puts ECHO's lyrics background back to what it was before the repair. */
+const restoreEchoBackground = async () => {
+  const api = echoAppApi();
+  const saved = state.echoBackground?.saved;
+  if (!api?.setSettings || !saved) {
+    reportNotice(copy.echoBgNothingToRestore);
+    return;
+  }
+  state.busy = copy.echoBgWorking;
+  renderSoon();
+  try {
+    const patch = {};
+    for (const [key, value] of Object.entries(saved)) {
+      if (value !== undefined) patch[key] = value;
+    }
+    const updated = await api.setSettings(patch);
+    state.echoBackground = { settings: updated, saved: null, line: describeEchoBackground(updated) };
+    reportNotice(copy.echoBgRestored);
+    refreshBackgroundPage({ force: true });
+    backdrop.node = null;
+    void pollBackdrop();
+  } catch (error) {
+    reportError(error);
+  } finally {
+    state.busy = null;
+    renderSoon();
+  }
+};
+
 const copyEngineDiagnostics = async () => {
   const report = {
     generatedAt: new Date().toISOString(),
@@ -6297,6 +6467,30 @@ const renderBackgroundSettings = ({ masterSwitch = false } = {}) => {
 
   wrap.append(engineSection);
 
+  // ---- ECHO 背景遮挡：一键修复 --------------------------------------------
+  // ECHO's own lyrics page can paint over the MV layer, so the MV is there and
+  // playing but nothing of it is visible. Its 「画境」(coverStage) preset renders
+  // `.lyrics-cover-stage-artwork` at z-index 2 while this mod's layer sits at 0, and
+  // the immersive-cover style only exists to show the album art — the MV replaces
+  // exactly that. The button writes ECHO's own settings through
+  // `echo.app.setSettings`, so the app updates itself; nothing is forced with CSS.
+  const echoSection = bgSection(copy.echoBgTitle, copy.echoBgHint, { id: 'echoBackground' });
+  const echoState = state.echoBackground;
+  echoSection.append(h('p', 'mms-muted', echoState?.line || copy.echoBgUnknown));
+  const echoActions = h('div', 'mms-account-actions');
+  echoActions.append(
+    button('mms-primary', copy.echoBgFix, () => void repairEchoBackground(), {
+      title: copy.echoBgFixHint,
+    }),
+    button('mms-ghost', copy.echoBgRestore, () => void restoreEchoBackground(), {
+      title: copy.echoBgRestoreHint,
+      disabled: !echoState?.saved,
+    }),
+    button('mms-ghost', copy.echoBgRefresh, () => void readEchoBackground()),
+  );
+  echoSection.append(echoActions);
+  wrap.append(echoSection);
+
   // Keep the numbers fresh the first time the page is opened, and fetch the
   // candidates of the playing track once per track so a wrong match can be
   // corrected without pressing anything.
@@ -6309,6 +6503,13 @@ const renderBackgroundSettings = ({ masterSwitch = false } = {}) => {
   if (lastTrackKey && state.backgroundTestFor !== lastTrackKey) {
     state.backgroundTestFor = lastTrackKey;
     void loadBackdropCandidates(lastTrack, { silent: true });
+  }
+
+  // ECHO's lyrics-background settings are read once per page open, so the 「被 ECHO
+  // 背景盖住？」 section can say whether the MV is currently being covered.
+  if (!state.echoBackground) {
+    state.echoBackground = { line: copy.echoBgUnknown, saved: null };
+    void readEchoBackground();
   }
 
   if (!state.mvEngine) {
@@ -6643,6 +6844,11 @@ const backgroundPageSignature = () => [
   mergedBackdropCandidates().length,
   (state.mvVariants?.variants || []).length,
   state.busy || '',
+  // ECHO's own lyrics background, so 「被 ECHO 背景盖住？」 refreshes its status line
+  // and its 恢复 button the moment the repair (or ECHO itself) changes it.
+  state.echoBackground?.settings?.lyricsPageStyle || '',
+  state.echoBackground?.settings?.lyricsImmersiveCoverStyleEnabled === true ? 'immersive' : '',
+  state.echoBackground?.saved ? 'saved' : '',
 ].join('|');
 
 const renderBackgroundPage = () => {

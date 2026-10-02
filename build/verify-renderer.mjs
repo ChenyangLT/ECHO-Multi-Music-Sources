@@ -469,6 +469,20 @@ class CustomEvent {
   preventDefault() { this.defaultPrevented = true; }
 }
 
+// ECHO's own lyrics-background settings, as the repair button reads and writes them.
+// These are the values that hide the MV: the 「画境」page style paints the album art
+// in `.lyrics-cover-stage-artwork` at z-index 2, above the mod's layer at 0.
+const echoAppSettings = {
+  lyricsPageStyle: 'coverStage',
+  lyricsImmersiveCoverStyleEnabled: true,
+  lyricsImmersiveCoverGlassEnabled: false,
+  lyricsRoseVinylGradientEnabled: false,
+  lyricsBackgroundMode: 'theme',
+  lyricsThemeFilterEnabled: true,
+  lyricsCoverOpacityPercent: 40,
+  lyricsCoverBlurPx: 10,
+};
+
 const echoExternalMod = {
   version: 1,
   manifest: { name: 'ECHO Multi Music Sources', version: '1.0.0' },
@@ -510,7 +524,20 @@ const echoExternalMod = {
     mvMatchMode: 'first',
     mvSourceMode: 'engine',
   },
-  echo: { playback: { playMediaItem: async () => ({ ok: true }) } },
+  echo: {
+    playback: { playMediaItem: async () => ({ ok: true }) },
+    // ECHO's own settings, the surface 「一键修复 MV 被遮挡」 writes through. The
+    // initial values are the combination that hides the MV: the 「画境」page style
+    // plus the immersive cover.
+    app: {
+      getSettings: async () => ({ ...echoAppSettings }),
+      setSettings: async (patch) => {
+        Object.assign(echoAppSettings, patch);
+        calls.push({ method: 'echo.setSettings', payload: { ...patch } });
+        return { ...echoAppSettings };
+      },
+    },
+  },
   player,
   main: { invoke: invokeMain },
   extend: {
@@ -3557,6 +3584,85 @@ const run = async () => {
       `src=${String(offsetVideo?.src || '').slice(-26)}`,
     );
     mainResponses.mvGetSelected = { ok: true, result: null };
+  }
+
+  // --- ECHO's own background covering the MV, and the one-click repair ---------
+  // ECHO can paint over the MV layer: its 「画境」(coverStage) page style renders the
+  // album art in `.lyrics-cover-stage-artwork` at z-index 2 while this mod's layer
+  // sits at 0, so the MV is playing but nothing of it is visible. The page's
+  // 「被 ECHO 背景盖住？」 section reports that state and its button writes ECHO's own
+  // settings — the app updates itself, nothing is forced with CSS over it.
+  {
+    // Start from the combination the user reported.
+    Object.assign(echoAppSettings, {
+      lyricsPageStyle: 'coverStage',
+      lyricsImmersiveCoverStyleEnabled: true,
+      lyricsThemeFilterEnabled: true,
+      lyricsCoverOpacityPercent: 40,
+      lyricsCoverBlurPx: 10,
+    });
+    const echoRoot = new Element('div');
+    mvPage.render(echoRoot, { toast: (message) => toasts.push(message), echo: {}, config: echoExternalMod.config });
+    await settle(6);
+
+    const echoSection = () => echoRoot.querySelectorAll('.mms-bg-section')
+      .find((section) => String(section.allText() || '').includes('被 ECHO 背景盖住'));
+    check('the ECHO-background section is offered', Boolean(echoSection()));
+    if (echoSection()) {
+      echoSection().dataset.open = 'true';
+      await settle(2);
+      const textBefore = String(echoSection().allText() || '');
+      check(
+        'it reports that ECHO is currently covering the MV',
+        textBefore.includes('coverStage') && textBefore.includes('正在盖住'),
+        textBefore.split('\n').find((line) => line.includes('ECHO 歌词页样式')) || textBefore.slice(0, 60),
+      );
+
+      const fix = echoSection().querySelectorAll('button').find((b) => String(b.textContent || '').includes('一键修复'));
+      check('the repair button is offered', Boolean(fix));
+      fix?.click();
+      await waitFor(
+        () => calls.some((call) => call.method === 'echo.setSettings'),
+        'the repair writes ECHO settings',
+        8000,
+      );
+      const patch = calls.filter((call) => call.method === 'echo.setSettings').slice(-1)[0]?.payload || {};
+      check(
+        'the repair switches ECHO off its covering style',
+        patch.lyricsPageStyle === 'default' && patch.lyricsImmersiveCoverStyleEnabled === false,
+        JSON.stringify(patch),
+      );
+      await settle(6);
+      const textAfter = String(echoSection()?.allText() || '');
+      check(
+        'the section now reports the MV as unobstructed',
+        textAfter.includes('不挡 MV') && textAfter.includes('default'),
+        textAfter.split('\n').find((line) => line.includes('ECHO 歌词页样式')) || textAfter.slice(0, 60),
+      );
+
+      const restore = echoSection().querySelectorAll('button').find((b) => String(b.textContent || '').includes('恢复'));
+      check('the restore button becomes available after the repair', Boolean(restore) && restore.disabled !== true);
+      restore?.click();
+      await waitFor(
+        () => calls.filter((call) => call.method === 'echo.setSettings').length >= 2,
+        'the restore writes ECHO settings back',
+        8000,
+      );
+      check(
+        'the restore puts ECHO\'s own values back',
+        echoAppSettings.lyricsPageStyle === 'coverStage'
+          && echoAppSettings.lyricsImmersiveCoverStyleEnabled === true
+          && echoAppSettings.lyricsCoverOpacityPercent === 40,
+        JSON.stringify({
+          style: echoAppSettings.lyricsPageStyle,
+          immersive: echoAppSettings.lyricsImmersiveCoverStyleEnabled,
+          opacity: echoAppSettings.lyricsCoverOpacityPercent,
+        }),
+      );
+      // Leave ECHO in the repaired state: that is what the user wants kept.
+      echoAppSettings.lyricsPageStyle = 'default';
+      echoAppSettings.lyricsImmersiveCoverStyleEnabled = false;
+    }
   }
 
   // --- cleanup -------------------------------------------------------------
